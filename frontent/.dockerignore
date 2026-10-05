@@ -1,0 +1,6 @@
+# Dépendances et artefacts exclus de l'image frontend
+node_modules
+.next
+tsconfig.tsbuildinfo
+npm-debug.log*
+.git

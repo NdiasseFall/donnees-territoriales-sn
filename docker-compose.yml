@@ -1,0 +1,158 @@
+# =============================================================================
+# Plateforme Nationale de Données Territoriales du Sénégal — US-001
+# Une seule commande : docker compose up -d
+#   - postgis  : PostgreSQL 15 + PostGIS 3.3 (+ extensions & schémas, init idempotent)
+#   - redis    : cache, sessions et queues
+#   - backend  : API Laravel (healthcheck /api/v1/health)
+#   - frontent : Web GIS Next.js (healthcheck /)
+#   - etl      : profil "tools" — seed idempotent du référentiel (hors up par défaut)
+#
+# Seed du référentiel (idempotent, US-001 critère 3) :
+#   docker compose --profile tools run --rm etl python -m etl.cli seed
+# =============================================================================
+
+services:
+
+  # 1. Base de données spatiale PostgreSQL 15 + PostGIS 3.3
+  postgis:
+    image: postgis/postgis:15-3.3
+    container_name: territorial_sn_postgis
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${DB_DATABASE:-donnees_territoriales_sn}
+      POSTGRES_USER: ${DB_USERNAME:-postgres}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-postgres}
+    ports:
+      - "${DB_PORT:-5432}:5432"
+    volumes:
+      - postgis_data:/var/lib/postgresql/data
+      # Montage fichier par fichier (et non du répertoire entier) :
+      # init_all.sql utilise \i sur des chemins relatifs + un CREATE TRIGGER
+      # non idempotent — son exécution par docker-entrypoint-initdb.d ferait
+      # échouer l'initialisation (ON_ERROR_STOP=1).
+      - ./database/sql/00_init_extensions_schemas.sql:/docker-entrypoint-initdb.d/00_init_extensions_schemas.sql:ro
+      - ./database/sql/01_create_audit_schema.sql:/docker-entrypoint-initdb.d/01_create_audit_schema.sql:ro
+      - ./database/sql/02_create_core_schema.sql:/docker-entrypoint-initdb.d/02_create_core_schema.sql:ro
+      - ./database/sql/03_create_raw_schema.sql:/docker-entrypoint-initdb.d/03_create_raw_schema.sql:ro
+      - ./database/sql/04_create_staging_schema.sql:/docker-entrypoint-initdb.d/04_create_staging_schema.sql:ro
+      - ./database/sql/05_create_published_schema.sql:/docker-entrypoint-initdb.d/05_create_published_schema.sql:ro
+      - ./database/sql/06_spatial_helper_functions.sql:/docker-entrypoint-initdb.d/06_spatial_helper_functions.sql:ro
+    networks:
+      - territorial_net
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USERNAME:-postgres} -d ${DB_DATABASE:-donnees_territoriales_sn}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # 2. Cache & Queues Redis
+  redis:
+    image: redis:7-alpine
+    container_name: territorial_sn_redis
+    restart: unless-stopped
+    ports:
+      - "${REDIS_PORT:-6379}:6379"
+    volumes:
+      - redis_data:/data
+    networks:
+      - territorial_net
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # 3. Backend Laravel (API REST & GeoJSON)
+  backend:
+    build: ./backend
+    container_name: territorial_sn_backend
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    environment:
+      APP_NAME: "Données Territoriales SN"
+      APP_ENV: local
+      APP_DEBUG: "true"
+      APP_URL: http://localhost:8000
+      # Clé de chiffrement de développement (générée, non secrète).
+      APP_KEY: ${APP_KEY:-base64:KY0K+GjcL1EpKCnlE+DlV7F50SySQZUkmkTJzbIPMOM=}
+      LOG_CHANNEL: stderr
+      DB_CONNECTION: pgsql
+      DB_HOST: postgis
+      DB_PORT: "5432"
+      DB_DATABASE: ${DB_DATABASE:-donnees_territoriales_sn}
+      DB_USERNAME: ${DB_USERNAME:-postgres}
+      DB_PASSWORD: ${DB_PASSWORD:-postgres}
+      REDIS_HOST: redis
+      REDIS_PORT: "6379"
+      REDIS_PASSWORD: "null"
+      CACHE_DRIVER: redis
+      QUEUE_CONNECTION: redis
+      SESSION_DRIVER: redis
+    depends_on:
+      postgis:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - territorial_net
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://127.0.0.1:8000/api/v1/health || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 40s
+
+  # 4. Frontend Next.js / MapLibre GL JS
+  frontent:
+    build:
+      context: ./frontent
+      args:
+        NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost:8000/api/v1}
+    container_name: territorial_sn_frontent
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    depends_on:
+      backend:
+        condition: service_started
+    networks:
+      - territorial_net
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1:3000/ || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 40s
+
+  # 5. ETL Python — profil "tools" (hors `docker compose up` par défaut).
+  #    Seed idempotent : docker compose --profile tools run --rm etl python -m etl.cli seed
+  etl:
+    build:
+      context: .
+      dockerfile: etl/Dockerfile
+    container_name: territorial_sn_etl
+    profiles: ["tools"]
+    restart: "no"
+    environment:
+      DB_HOST: postgis
+      DB_PORT: "5432"
+      DB_DATABASE: ${DB_DATABASE:-donnees_territoriales_sn}
+      DB_USERNAME: ${DB_USERNAME:-postgres}
+      DB_PASSWORD: ${DB_PASSWORD:-postgres}
+    depends_on:
+      postgis:
+        condition: service_healthy
+    networks:
+      - territorial_net
+
+networks:
+  territorial_net:
+    driver: bridge
+
+volumes:
+  postgis_data:
+    driver: local
+  redis_data:
+    driver: local
+

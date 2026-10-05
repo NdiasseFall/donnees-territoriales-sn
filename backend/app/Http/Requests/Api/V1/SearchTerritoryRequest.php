@@ -1,0 +1,25 @@
+<?php
+
+declare(strict_types=1);
+
+namespace App\Http\Requests\Api\V1;
+
+use Illuminate\Foundation\Http\FormRequest;
+
+class SearchTerritoryRequest extends FormRequest
+{
+    public function authorize(): bool
+    {
+        return true;
+    }
+
+    public function rules(): array
+    {
+        return [
+            'q' => 'required|string|min:2|max:100',
+            'level' => 'nullable|integer|between:0,6',
+            'parent_code' => 'nullable|string|max:50',
+            'limit' => 'nullable|integer|min:1|max:100',
+        ];
+    }
+}

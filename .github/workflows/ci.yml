@@ -1,0 +1,176 @@
+name: CI
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main, develop]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  backend:
+    name: Backend (PHPUnit + PostGIS réel)
+    runs-on: ubuntu-latest
+
+    # US-021 : PostGIS est un service réel, jamais un mock spatial.
+    services:
+      postgis:
+        image: postgis/postgis:15-3.3
+        env:
+          POSTGRES_DB: territorial_test
+          POSTGRES_USER: territorial
+          POSTGRES_PASSWORD: territorial
+          POSTGRES_HOST_AUTH_METHOD: trust
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U territorial -d territorial_test"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 10
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup PHP 8.2
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.2'
+          extensions: pdo_pgsql, pgsql, gdal
+          coverage: none
+
+      - name: Cache Composer
+        uses: actions/cache@v4
+        with:
+          path: backend/vendor
+          key: composer-${{ hashFiles('backend/composer.lock') }}
+          restore-keys: composer-
+
+      - name: Install dependencies
+        working-directory: backend
+        run: composer install --no-interaction --prefer-dist
+
+      - name: Attente de PostGIS
+        run: |
+          for i in $(seq 1 30); do
+            if pg_isready -h localhost -U territorial -d territorial_test; then
+              echo "PostGIS is ready"
+              exit 0
+            fi
+            sleep 2
+          done
+          echo "PostGIS did not become ready in time"
+          exit 1
+
+      - name: Initialisation du schéma PostGIS
+        run: |
+          for file in database/sql/00_init_extensions_schemas.sql \
+                      database/sql/01_create_audit_schema.sql \
+                      database/sql/02_create_core_schema.sql \
+                      database/sql/03_create_raw_schema.sql \
+                      database/sql/04_create_staging_schema.sql \
+                      database/sql/05_create_published_schema.sql \
+                      database/sql/06_spatial_helper_functions.sql; do
+            echo "--> Applying $file"
+            psql -h localhost -U territorial -d territorial_test -v ON_ERROR_STOP=1 -f "$file"
+          done
+
+      - name: Exécution des tests
+        working-directory: backend
+        env:
+          DB_CONNECTION: pgsql
+          DB_HOST: localhost
+          DB_PORT: 5432
+          DB_DATABASE: territorial_test
+          DB_USERNAME: territorial
+          DB_PASSWORD: territorial
+        run: vendor/bin/phpunit --testdox
+
+  lint:
+    name: Qualité de code
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.2'
+      - run: composer install --no-interaction --prefer-dist
+        working-directory: backend
+      # php -l : codes 123/124 si erreur — l'échec est réellement propagé.
+      - name: Syntaxe PHP
+        run: find backend/app backend/tests -name '*.php' -print0 | xargs -0 -n1 php -l
+      # Style Laravel Pint : échoue si le code n'est pas conforme.
+      - name: Style de code (Pint)
+        working-directory: backend
+        run: vendor/bin/pint --test
+
+  frontend:
+    name: Frontend (typecheck + build)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+          cache-dependency-path: frontent/package-lock.json
+      - name: Install dependencies
+        working-directory: frontent
+        run: npm ci
+      - name: TypeScript
+        working-directory: frontent
+        run: npx tsc --noEmit
+      - name: Build
+        working-directory: frontent
+        run: npm run build
+
+  images:
+    name: Build & publication des images Docker
+    runs-on: ubuntu-latest
+    # Uniquement sur tag de release : critère US-002 (image publiée = tag v*.*.*).
+    if: startsWith(github.ref, 'refs/tags/v')
+    permissions:
+      contents: read
+      packages: write
+    strategy:
+      matrix:
+        include:
+          - image: backend
+            context: ./backend
+          - image: frontent
+            context: ./frontent
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Login to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ghcr.io/${{ github.repository }}/${{ matrix.image }}
+          tags: |
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=raw,value=latest
+
+      - name: Build & push
+        uses: docker/build-push-action@v6
+        with:
+          context: ${{ matrix.context }}
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max

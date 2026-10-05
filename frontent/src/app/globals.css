@@ -1,0 +1,15 @@
+@import "tailwindcss";
+
+@theme {
+  --color-primary: #006837;
+  --color-accent: #FDEF42;
+}
+
+html,
+body {
+  height: 100%;
+}
+
+.maplibregl-map {
+  font-family: inherit;
+}

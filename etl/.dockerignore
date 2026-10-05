@@ -1,0 +1,5 @@
+# Artefacts Python exclus de l'image ETL
+__pycache__
+*.pyc
+.venv
+venv

@@ -1,0 +1,18 @@
+# Contexte de build racine (service etl) — on exclut tout ce qui est lourd
+# et sans rapport avec le pipeline Python.
+.git
+.github
+.vscodeagents
+.clinerules
+backend/vendor
+backend/storage/logs
+backend/storage/framework/cache/data
+backend/.phpunit.cache
+frontent/node_modules
+frontent/.next
+frontent/tsconfig.tsbuildinfo
+etl/__pycache__
+**/__pycache__
+**/*.pyc
+docs
+*.md

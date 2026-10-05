@@ -1,0 +1,37 @@
+# ==============================================================================
+# .gitignore racine — Plateforme Nationale de Données Territoriales du Sénégal
+# ==============================================================================
+
+# --- Dépendances & artefacts de build ---
+node_modules/
+vendor/
+.next/
+*.tsbuildinfo
+frontent/*.tgz
+
+# --- Environnement & secrets (jamais commités) ---
+.env
+.env.*
+!.env.example
+
+# --- Backend Laravel ---
+backend/.phpunit.cache/
+backend/bootstrap/cache/*.php
+backend/storage/app/*
+backend/storage/framework/cache/data/*
+backend/storage/framework/sessions/*
+backend/storage/framework/views/*
+backend/storage/logs/*
+# Les marqueurs .gitignore internes sont versionnés (conservent les dossiers)
+!backend/storage/**/.gitignore
+
+# --- ETL Python ---
+__pycache__/
+*.pyc
+.venv/
+venv/
+
+# --- Divers ---
+*.log
+.DS_Store
+Thumbs.db
