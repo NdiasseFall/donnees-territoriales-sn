@@ -41,7 +41,8 @@ class PostGisInfrastructureTest extends TestCase
 
         self::assertTrue((bool) $result->is_valid, 'Un polygone valide doit être accepté par ST_IsValid.');
         self::assertSame(4326, (int) $result->srid, 'Le SRID doit être préservé en EPSG:4326.');
-        self::assertStringContainsString('POINT', (string) $result->geom_type);
+        // ST_GeometryType renvoie « ST_Point » : comparaison insensible à la casse.
+        self::assertStringContainsString('POINT', strtoupper((string) $result->geom_type));
     }
 
     /**

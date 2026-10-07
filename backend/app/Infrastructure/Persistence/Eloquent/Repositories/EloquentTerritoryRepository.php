@@ -16,6 +16,7 @@ use App\Domain\Territory\ValueObjects\HierarchyLevel;
 use App\Domain\Territory\ValueObjects\TerritoryCode;
 use DateTimeImmutable;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Str;
 
 /**
  * Implémentation Eloquent/PostGIS du TerritoryRepositoryInterface.
@@ -25,22 +26,22 @@ class EloquentTerritoryRepository implements TerritoryRepositoryInterface
     public function findById(int $id): ?Territory
     {
         $raw = DB::table('core.territories as t')
-            ->leftJoin('core.territory_types as tt', 't.type_id', '=', 'tt.id')
+            ->leftJoin('core.territory_types as tt', 't.territory_type_id', '=', 'tt.id')
             ->leftJoin('core.territories as pt', 't.parent_id', '=', 'pt.id')
             ->leftJoin('core.geometries as g', 't.geometry_id', '=', 'g.id')
             ->where('t.id', $id)
             ->select([
                 't.*',
                 'tt.level as type_level',
-                'tt.name_fr as type_name',
+                'tt.name as type_name',
                 'pt.code as parent_code_value',
                 'g.uuid as geom_uuid',
                 'g.geometry_type',
                 'g.srid',
-                'g.area_km2',
-                'g.perimeter_m',
-                'g.is_valid as geom_is_valid',
-                'g.validation_error as geom_validation_error',
+                'g.area_sqkm as area_km2',
+                'g.perimeter_km as perimeter_m',
+                DB::raw("CASE WHEN g.quality_status IN ('VALID','VERIFIED','OFFICIAL') THEN 1 ELSE 0 END as geom_is_valid"),
+                DB::raw("CASE WHEN g.quality_status IN ('INVALID','WARNING') THEN g.validation_details::text END as geom_validation_error"),
                 DB::raw('ST_AsGeoJSON(g.geometry) as geojson'),
                 DB::raw('ST_X(g.centroid) as centroid_lon'),
                 DB::raw('ST_Y(g.centroid) as centroid_lat'),
@@ -57,22 +58,22 @@ class EloquentTerritoryRepository implements TerritoryRepositoryInterface
     public function findByUuid(string $uuid): ?Territory
     {
         $raw = DB::table('core.territories as t')
-            ->leftJoin('core.territory_types as tt', 't.type_id', '=', 'tt.id')
+            ->leftJoin('core.territory_types as tt', 't.territory_type_id', '=', 'tt.id')
             ->leftJoin('core.territories as pt', 't.parent_id', '=', 'pt.id')
             ->leftJoin('core.geometries as g', 't.geometry_id', '=', 'g.id')
             ->where('t.uuid', $uuid)
             ->select([
                 't.*',
                 'tt.level as type_level',
-                'tt.name_fr as type_name',
+                'tt.name as type_name',
                 'pt.code as parent_code_value',
                 'g.uuid as geom_uuid',
                 'g.geometry_type',
                 'g.srid',
-                'g.area_km2',
-                'g.perimeter_m',
-                'g.is_valid as geom_is_valid',
-                'g.validation_error as geom_validation_error',
+                'g.area_sqkm as area_km2',
+                'g.perimeter_km as perimeter_m',
+                DB::raw("CASE WHEN g.quality_status IN ('VALID','VERIFIED','OFFICIAL') THEN 1 ELSE 0 END as geom_is_valid"),
+                DB::raw("CASE WHEN g.quality_status IN ('INVALID','WARNING') THEN g.validation_details::text END as geom_validation_error"),
                 DB::raw('ST_AsGeoJSON(g.geometry) as geojson'),
                 DB::raw('ST_X(g.centroid) as centroid_lon'),
                 DB::raw('ST_Y(g.centroid) as centroid_lat'),
@@ -89,22 +90,22 @@ class EloquentTerritoryRepository implements TerritoryRepositoryInterface
     public function findByCode(TerritoryCode $code): ?Territory
     {
         $raw = DB::table('core.territories as t')
-            ->leftJoin('core.territory_types as tt', 't.type_id', '=', 'tt.id')
+            ->leftJoin('core.territory_types as tt', 't.territory_type_id', '=', 'tt.id')
             ->leftJoin('core.territories as pt', 't.parent_id', '=', 'pt.id')
             ->leftJoin('core.geometries as g', 't.geometry_id', '=', 'g.id')
             ->where('t.code', $code->getValue())
             ->select([
                 't.*',
                 'tt.level as type_level',
-                'tt.name_fr as type_name',
+                'tt.name as type_name',
                 'pt.code as parent_code_value',
                 'g.uuid as geom_uuid',
                 'g.geometry_type',
                 'g.srid',
-                'g.area_km2',
-                'g.perimeter_m',
-                'g.is_valid as geom_is_valid',
-                'g.validation_error as geom_validation_error',
+                'g.area_sqkm as area_km2',
+                'g.perimeter_km as perimeter_m',
+                DB::raw("CASE WHEN g.quality_status IN ('VALID','VERIFIED','OFFICIAL') THEN 1 ELSE 0 END as geom_is_valid"),
+                DB::raw("CASE WHEN g.quality_status IN ('INVALID','WARNING') THEN g.validation_details::text END as geom_validation_error"),
                 DB::raw('ST_AsGeoJSON(g.geometry) as geojson'),
                 DB::raw('ST_X(g.centroid) as centroid_lon'),
                 DB::raw('ST_Y(g.centroid) as centroid_lat'),
@@ -121,22 +122,22 @@ class EloquentTerritoryRepository implements TerritoryRepositoryInterface
     public function findByHierarchyLevel(HierarchyLevel $level, int $limit = 100, int $offset = 0): array
     {
         $rows = DB::table('core.territories as t')
-            ->join('core.territory_types as tt', 't.type_id', '=', 'tt.id')
+            ->join('core.territory_types as tt', 't.territory_type_id', '=', 'tt.id')
             ->leftJoin('core.territories as pt', 't.parent_id', '=', 'pt.id')
             ->leftJoin('core.geometries as g', 't.geometry_id', '=', 'g.id')
             ->where('tt.level', $level->getLevel())
             ->select([
                 't.*',
                 'tt.level as type_level',
-                'tt.name_fr as type_name',
+                'tt.name as type_name',
                 'pt.code as parent_code_value',
                 'g.uuid as geom_uuid',
                 'g.geometry_type',
                 'g.srid',
-                'g.area_km2',
-                'g.perimeter_m',
-                'g.is_valid as geom_is_valid',
-                'g.validation_error as geom_validation_error',
+                'g.area_sqkm as area_km2',
+                'g.perimeter_km as perimeter_m',
+                DB::raw("CASE WHEN g.quality_status IN ('VALID','VERIFIED','OFFICIAL') THEN 1 ELSE 0 END as geom_is_valid"),
+                DB::raw("CASE WHEN g.quality_status IN ('INVALID','WARNING') THEN g.validation_details::text END as geom_validation_error"),
                 DB::raw('ST_AsGeoJSON(g.geometry) as geojson'),
                 DB::raw('ST_X(g.centroid) as centroid_lon'),
                 DB::raw('ST_Y(g.centroid) as centroid_lat'),
@@ -156,22 +157,22 @@ class EloquentTerritoryRepository implements TerritoryRepositoryInterface
     public function findChildren(TerritoryCode $parentCode): array
     {
         $rows = DB::table('core.territories as t')
-            ->join('core.territory_types as tt', 't.type_id', '=', 'tt.id')
+            ->join('core.territory_types as tt', 't.territory_type_id', '=', 'tt.id')
             ->join('core.territories as pt', 't.parent_id', '=', 'pt.id')
             ->leftJoin('core.geometries as g', 't.geometry_id', '=', 'g.id')
             ->where('pt.code', $parentCode->getValue())
             ->select([
                 't.*',
                 'tt.level as type_level',
-                'tt.name_fr as type_name',
+                'tt.name as type_name',
                 'pt.code as parent_code_value',
                 'g.uuid as geom_uuid',
                 'g.geometry_type',
                 'g.srid',
-                'g.area_km2',
-                'g.perimeter_m',
-                'g.is_valid as geom_is_valid',
-                'g.validation_error as geom_validation_error',
+                'g.area_sqkm as area_km2',
+                'g.perimeter_km as perimeter_m',
+                DB::raw("CASE WHEN g.quality_status IN ('VALID','VERIFIED','OFFICIAL') THEN 1 ELSE 0 END as geom_is_valid"),
+                DB::raw("CASE WHEN g.quality_status IN ('INVALID','WARNING') THEN g.validation_details::text END as geom_validation_error"),
                 DB::raw('ST_AsGeoJSON(g.geometry) as geojson'),
                 DB::raw('ST_X(g.centroid) as centroid_lon'),
                 DB::raw('ST_Y(g.centroid) as centroid_lat'),
@@ -197,22 +198,22 @@ class EloquentTerritoryRepository implements TerritoryRepositoryInterface
         $ancestorCodes = array_column($results, 'code');
 
         $rows = DB::table('core.territories as t')
-            ->join('core.territory_types as tt', 't.type_id', '=', 'tt.id')
+            ->join('core.territory_types as tt', 't.territory_type_id', '=', 'tt.id')
             ->leftJoin('core.territories as pt', 't.parent_id', '=', 'pt.id')
             ->leftJoin('core.geometries as g', 't.geometry_id', '=', 'g.id')
             ->whereIn('t.code', $ancestorCodes)
             ->select([
                 't.*',
                 'tt.level as type_level',
-                'tt.name_fr as type_name',
+                'tt.name as type_name',
                 'pt.code as parent_code_value',
                 'g.uuid as geom_uuid',
                 'g.geometry_type',
                 'g.srid',
-                'g.area_km2',
-                'g.perimeter_m',
-                'g.is_valid as geom_is_valid',
-                'g.validation_error as geom_validation_error',
+                'g.area_sqkm as area_km2',
+                'g.perimeter_km as perimeter_m',
+                DB::raw("CASE WHEN g.quality_status IN ('VALID','VERIFIED','OFFICIAL') THEN 1 ELSE 0 END as geom_is_valid"),
+                DB::raw("CASE WHEN g.quality_status IN ('INVALID','WARNING') THEN g.validation_details::text END as geom_validation_error"),
                 DB::raw('ST_AsGeoJSON(g.geometry) as geojson'),
                 DB::raw('ST_X(g.centroid) as centroid_lon'),
                 DB::raw('ST_Y(g.centroid) as centroid_lat'),
@@ -230,7 +231,7 @@ class EloquentTerritoryRepository implements TerritoryRepositoryInterface
     public function search(string $query, ?HierarchyLevel $level = null, int $limit = 20): array
     {
         $builder = DB::table('core.territories as t')
-            ->join('core.territory_types as tt', 't.type_id', '=', 'tt.id')
+            ->join('core.territory_types as tt', 't.territory_type_id', '=', 'tt.id')
             ->leftJoin('core.territories as pt', 't.parent_id', '=', 'pt.id')
             ->leftJoin('core.geometries as g', 't.geometry_id', '=', 'g.id');
 
@@ -242,22 +243,21 @@ class EloquentTerritoryRepository implements TerritoryRepositoryInterface
         $builder->where(function ($q) use ($cleanQuery) {
             $q->whereRaw('t.code ILIKE ?', ["%{$cleanQuery}%"])
                 ->orWhereRaw('t.name ILIKE ?', ["%{$cleanQuery}%"])
-                ->orWhereRaw('t.normalized_name ILIKE ?', ['%'.strtoupper($cleanQuery).'%'])
                 ->orWhereRaw("to_tsvector('french', public.immutable_unaccent(t.name)) @@ plainto_tsquery('french', public.immutable_unaccent(?))", [$cleanQuery]);
         });
 
         $rows = $builder->select([
             't.*',
             'tt.level as type_level',
-            'tt.name_fr as type_name',
+            'tt.name as type_name',
             'pt.code as parent_code_value',
             'g.uuid as geom_uuid',
             'g.geometry_type',
             'g.srid',
-            'g.area_km2',
-            'g.perimeter_m',
-            'g.is_valid as geom_is_valid',
-            'g.validation_error as geom_validation_error',
+            'g.area_sqkm as area_km2',
+            'g.perimeter_km as perimeter_m',
+            DB::raw("CASE WHEN g.quality_status IN ('VALID','VERIFIED','OFFICIAL') THEN 1 ELSE 0 END as geom_is_valid"),
+            DB::raw("CASE WHEN g.quality_status IN ('INVALID','WARNING') THEN g.validation_details::text END as geom_validation_error"),
             DB::raw('ST_AsGeoJSON(g.geometry) as geojson'),
             DB::raw('ST_X(g.centroid) as centroid_lon'),
             DB::raw('ST_Y(g.centroid) as centroid_lat'),
@@ -274,19 +274,19 @@ class EloquentTerritoryRepository implements TerritoryRepositoryInterface
 
     public function save(Territory $territory): Territory
     {
+        // Colonnes alignées sur le schéma réel core.territories (CDC §14) :
+        // slug et level sont NOT NULL, quality_status vit dans core.geometries.
         $data = [
             'uuid' => $territory->getUuid(),
             'code' => $territory->getCode()->getValue(),
             'name' => $territory->getName(),
-            'normalized_name' => $territory->getNormalizedName(),
-            'ansd_code' => $territory->getAnsdCode(),
-            'type_id' => $territory->getTypeId(),
+            'slug' => Str::slug($territory->getName()),
+            'level' => $territory->getHierarchyLevel()->getLevel(),
+            'code_ansd' => $territory->getAnsdCode(),
+            'territory_type_id' => $territory->getTypeId(),
             'parent_id' => $territory->getParentId(),
-            'population' => $territory->getPopulation(),
-            'population_year' => $territory->getPopulationYear(),
-            'capital' => $territory->getCapital(),
+            'population_census' => $territory->getPopulation(),
             'status' => $territory->getStatus()->value,
-            'quality_status' => $territory->getQualityStatus()->value,
             'metadata' => json_encode($territory->getMetadata()),
             'updated_at' => now(),
         ];
@@ -306,7 +306,7 @@ class EloquentTerritoryRepository implements TerritoryRepositoryInterface
     public function countByLevel(HierarchyLevel $level): int
     {
         return (int) DB::table('core.territories as t')
-            ->join('core.territory_types as tt', 't.type_id', '=', 'tt.id')
+            ->join('core.territory_types as tt', 't.territory_type_id', '=', 'tt.id')
             ->where('tt.level', $level->getLevel())
             ->count();
     }
@@ -371,7 +371,7 @@ class EloquentTerritoryRepository implements TerritoryRepositoryInterface
             code: new TerritoryCode((string) $row->code),
             name: (string) $row->name,
             normalizedName: $row->normalized_name ?? null,
-            ansdCode: $row->ansd_code ?? null,
+            ansdCode: $row->code_ansd ?? null,
             hierarchyLevel: new HierarchyLevel((int) ($row->type_level ?? 0)),
             typeId: isset($row->type_id) ? (int) $row->type_id : null,
             typeName: $row->type_name ?? null,
@@ -381,7 +381,7 @@ class EloquentTerritoryRepository implements TerritoryRepositoryInterface
             centroid: $centroidVo,
             boundingBox: $bboxVo,
             area: $areaVo,
-            population: isset($row->population) ? (int) $row->population : null,
+            population: isset($row->population_census) ? (int) $row->population_census : null,
             populationYear: isset($row->population_year) ? (int) $row->population_year : null,
             capital: $row->capital ?? null,
             metadata: $metadata,

@@ -34,7 +34,7 @@ class SpatialController extends Controller
     public function reverseGeocode(ReverseGeocodeRequest $request): JsonResponse
     {
         $query = new ReverseGeocodeQuery(
-            longitude: (float) $request->input('lon'),
+            longitude: (float) $request->input('lng', $request->input('lon')),
             latitude: (float) $request->input('lat'),
             targetLevel: $request->has('level') ? (int) $request->input('level') : null
         );

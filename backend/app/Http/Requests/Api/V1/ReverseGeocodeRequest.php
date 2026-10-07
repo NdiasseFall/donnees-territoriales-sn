@@ -16,7 +16,9 @@ class ReverseGeocodeRequest extends FormRequest
     public function rules(): array
     {
         return [
-            'lon' => 'required|numeric|between:-180,180',
+            // CDC §44 : l'API publique accepte lat/lng (lng avec rétrocompatibilité lon).
+            'lng' => 'required_without:lon|numeric|between:-180,180',
+            'lon' => 'nullable|numeric|between:-180,180',
             'lat' => 'required|numeric|between:-90,90',
             'level' => 'nullable|integer|between:0,6',
         ];

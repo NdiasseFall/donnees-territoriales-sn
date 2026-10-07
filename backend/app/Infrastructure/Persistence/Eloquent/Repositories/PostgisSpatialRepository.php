@@ -59,7 +59,7 @@ class PostgisSpatialRepository implements SpatialQueryRepositoryInterface
 
         $query = DB::table('core.territories as t')
             ->join('core.geometries as g', 't.geometry_id', '=', 'g.id')
-            ->join('core.territory_types as tt', 't.type_id', '=', 'tt.id')
+            ->join('core.territory_types as tt', 't.territory_type_id', '=', 'tt.id')
             ->whereRaw('g.geometry && ST_GeomFromEWKT(?)', [$bboxWkt])
             ->whereRaw('ST_Intersects(g.geometry, ST_GeomFromEWKT(?))', [$bboxWkt]);
 
@@ -92,7 +92,7 @@ class PostgisSpatialRepository implements SpatialQueryRepositoryInterface
 
         $query = DB::table('core.territories as t')
             ->join('core.geometries as g', 't.geometry_id', '=', 'g.id')
-            ->join('core.territory_types as tt', 't.type_id', '=', 'tt.id')
+            ->join('core.territory_types as tt', 't.territory_type_id', '=', 'tt.id')
             ->whereRaw("g.geometry && {$geomExpr}", [$geojsonOrWkt])
             ->whereRaw("ST_Intersects(g.geometry, {$geomExpr})", [$geojsonOrWkt]);
 

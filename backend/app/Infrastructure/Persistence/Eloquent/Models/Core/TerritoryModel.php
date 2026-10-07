@@ -17,37 +17,38 @@ class TerritoryModel extends Model
 
     protected $fillable = [
         'uuid',
-        'code',
-        'name',
-        'normalized_name',
-        'ansd_code',
-        'iso_code',
-        'fips_code',
-        'type_id',
         'parent_id',
+        'territory_type_id',
         'geometry_id',
-        'population',
-        'population_year',
-        'capital',
+        'source_version_id',
+        'code',
+        'code_ansd',
+        'code_anat',
+        'name',
+        'official_name',
+        'slug',
+        'level',
         'status',
-        'quality_status',
+        'country_code',
+        'area_sqkm',
+        'population_census',
         'metadata',
-        'created_by',
-        'updated_by',
     ];
 
     protected $casts = [
         'metadata' => 'array',
-        'population' => 'integer',
-        'population_year' => 'integer',
-        'type_id' => 'integer',
+        'level' => 'integer',
+        'territory_type_id' => 'integer',
         'parent_id' => 'integer',
         'geometry_id' => 'integer',
+        'source_version_id' => 'integer',
+        'population_census' => 'integer',
+        'area_sqkm' => 'float',
     ];
 
     public function territoryType(): BelongsTo
     {
-        return $this->belongsTo(TerritoryTypeModel::class, 'type_id');
+        return $this->belongsTo(TerritoryTypeModel::class, 'territory_type_id');
     }
 
     public function geometry(): BelongsTo
