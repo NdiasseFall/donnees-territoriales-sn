@@ -16,6 +16,7 @@ use App\Http\Controllers\Controller;
 use App\Http\Requests\Api\V1\GetTerritoriesRequest;
 use App\Http\Resources\Api\V1\HierarchyNodeResource;
 use App\Http\Resources\Api\V1\TerritoryResource;
+use App\Http\Responses\ApiError;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Response;
@@ -81,7 +82,7 @@ class TerritoryController extends Controller
         if ($format === 'geojson') {
             $geojson = $this->spatialRepository->getPublishedGeoJsonFeature($code, $simplified, $tolerance);
             if ($geojson === null) {
-                return response()->json(['error' => 'Territoire introuvable.'], 404);
+                return ApiError::make('TERRITORY_NOT_FOUND', 'Territoire introuvable.', 404);
             }
 
             return response($geojson, 200, ['Content-Type' => 'application/geo+json']);
@@ -97,7 +98,7 @@ class TerritoryController extends Controller
         $dto = $this->getTerritoryByCodeHandler->handle($query);
 
         if ($dto === null) {
-            return response()->json(['error' => "Territoire avec le code '{$code}' introuvable."], 404);
+            return ApiError::make('TERRITORY_NOT_FOUND', "Territoire avec le code '{$code}' introuvable.", 404);
         }
 
         return response()->json([
@@ -115,7 +116,7 @@ class TerritoryController extends Controller
         $tree = $this->getTerritoryHierarchyHandler->handle($query);
 
         if ($tree === null) {
-            return response()->json(['error' => "Territoire avec le code '{$code}' introuvable."], 404);
+            return ApiError::make('TERRITORY_NOT_FOUND', "Territoire avec le code '{$code}' introuvable.", 404);
         }
 
         return response()->json([

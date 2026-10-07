@@ -23,23 +23,42 @@ class PostgisSpatialRepository implements SpatialQueryRepositoryInterface
 
     public function reverseGeocode(Coordinates $coordinates, ?HierarchyLevel $targetLevel = null): array
     {
-        $sql = 'SELECT level, type_code as type, code, name FROM published.fn_reverse_geocode(?, ?)';
-        $bindings = [$coordinates->getLongitude(), $coordinates->getLatitude()];
+        // fn_reverse_geocode renvoie un JSONB scalar {point, hierarchy:{type:{...}}}
+        // — appel en scalaire (SELECT fn(...)), pas en table.
+        $row = DB::selectOne(
+            'SELECT published.fn_reverse_geocode(?, ?) AS result',
+            [$coordinates->getLongitude(), $coordinates->getLatitude()]
+        );
 
-        $rows = DB::select($sql, $bindings);
+        $payload = $row->result ?? null;
+        if (is_string($payload)) {
+            $payload = json_decode($payload, true);
+        }
+        if (! is_array($payload)) {
+            return [];
+        }
+
+        $hierarchy = $payload['hierarchy'] ?? null;
+        if (! is_array($hierarchy)) {
+            return [];
+        }
 
         $results = [];
-        foreach ($rows as $row) {
-            $levelInt = (int) $row->level;
+        foreach ($hierarchy as $entry) {
+            if (! is_array($entry) || empty($entry['code'])) {
+                continue;
+            }
+
+            $levelInt = (int) ($entry['level'] ?? -1);
             if ($targetLevel !== null && $levelInt !== $targetLevel->getLevel()) {
                 continue;
             }
 
             $results[] = [
                 'level' => $levelInt,
-                'type' => (string) $row->type,
-                'code' => (string) $row->code,
-                'name' => (string) $row->name,
+                'type' => (string) ($entry['type'] ?? ''),
+                'code' => (string) $entry['code'],
+                'name' => (string) ($entry['name'] ?? ''),
             ];
         }
 

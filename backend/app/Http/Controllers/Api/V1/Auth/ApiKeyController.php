@@ -9,6 +9,7 @@ use App\Application\Auth\Handlers\CreateApiKeyHandler;
 use App\Domain\Auth\Enums\KeyTier;
 use App\Domain\Auth\Repositories\ApiKeyRepositoryInterface;
 use App\Http\Controllers\Controller;
+use App\Http\Responses\ApiError;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 
@@ -26,7 +27,7 @@ class ApiKeyController extends Controller
         $userId = auth()->id();
 
         if ($userId === null) {
-            return response()->json(['error' => 'Non authentifié.'], 401);
+            return ApiError::make('UNAUTHENTICATED', 'Non authentifié.', 401);
         }
 
         $repo = app(ApiKeyRepositoryInterface::class);
@@ -58,7 +59,7 @@ class ApiKeyController extends Controller
 
         $userId = auth()->id();
         if ($userId === null) {
-            return response()->json(['error' => 'Non authentifié.'], 401);
+            return ApiError::make('UNAUTHENTICATED', 'Non authentifié.', 401);
         }
 
         $tier = KeyTier::tryFrom($validated['tier'] ?? 'public') ?? KeyTier::PUBLIC;
@@ -87,7 +88,7 @@ class ApiKeyController extends Controller
         $result = $repo->revoke($uuid);
 
         if ($result === false) {
-            return response()->json(['error' => 'Clé API introuvable.'], 404);
+            return ApiError::make('API_KEY_NOT_FOUND', 'Clé API introuvable.', 404);
         }
 
         return response()->json([
@@ -105,7 +106,7 @@ class ApiKeyController extends Controller
         $result = $repo->regenerate($uuid);
 
         if ($result === null) {
-            return response()->json(['error' => 'Clé API introuvable.'], 404);
+            return ApiError::make('API_KEY_NOT_FOUND', 'Clé API introuvable.', 404);
         }
 
         [$apiKey, $plainToken] = $result;

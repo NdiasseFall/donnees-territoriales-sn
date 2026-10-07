@@ -9,6 +9,7 @@ use App\Domain\Dataset\Enums\AccessLevel;
 use App\Domain\Dataset\Repositories\DatasetRepositoryInterface;
 use App\Http\Controllers\Controller;
 use App\Http\Resources\Api\V1\DatasetResource;
+use App\Http\Responses\ApiError;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 
@@ -57,7 +58,7 @@ class DatasetController extends Controller
         $dataset = $this->datasetRepository->findBySlug($slug);
 
         if ($dataset === null) {
-            return response()->json(['error' => "Jeu de données '{$slug}' introuvable."], 404);
+            return ApiError::make('DATASET_NOT_FOUND', "Jeu de données '{$slug}' introuvable.", 404);
         }
 
         $latestVersion = $this->datasetRepository->findLatestPublishedVersion($dataset->getId());
