@@ -124,6 +124,13 @@ jobs:
       - name: TypeScript
         working-directory: frontent
         run: npx tsc --noEmit
+      # US-002 : lint strict (no-explicit-any = error) + tests Jest.
+      - name: ESLint
+        working-directory: frontent
+        run: npm run lint
+      - name: Tests Jest
+        working-directory: frontent
+        run: npm test
       - name: Build
         working-directory: frontent
         run: npm run build

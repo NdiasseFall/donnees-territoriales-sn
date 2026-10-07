@@ -39,7 +39,7 @@
 | # | Action | Livrable | Resp. | Statut |
 |---|---|---|---|---|
 | 0.1 | **Acter D-1 à D-4** (§103) : datasets ANAT, licences, codes canoniques, relation ANAT/ANSD | Décisions signées dans backlog | PM | 🔴 À faire (hors portée technique) |
-| 0.2 | **Initialiser git + dépôt distant** + conventions de commit | Repo local init + `.gitignore` ; remote à créer, `main` protégée | QA-DevOps | 🟡 Local OK, remote à créer |
+| 0.2 | **Initialiser git + dépôt distant** + conventions de commit | Repo GitHub `NdiasseFall/donnees-territoriales-sn` (**public**), `main` poussé | QA-DevOps | ✅ |
 | 0.3 | **Cible d'infrastructure** : scénario par défaut **VM + Docker Compose** retenu, hébergeur à choisir | Choix final documenté, VM ≥ 4 vCPU/8 Go/100 Go | PM | 🟡 Par défaut acté |
 | 0.4 | **Persister le plan** + statuts backlog | Ce document | PM | ✅ |
 | 0.5 | **Arbitrage domain « parent direct »** (adjacence de niveau vs graphe de données) | `HierarchyLevel` OU `HierarchyLevelTest` corrigé | Architecte | ✅ Arbitré par CDC §70/§39 : paires parent-enfant encodées dans la VO (commune → département…) |
@@ -58,8 +58,9 @@
 ### 1b. US-002 — CI/CD réellement verte (QA-DevOps)
 
 - [x] Job lint strict : `php -l` réel + `vendor/bin/pint --test` (l'ancien `continue-on-error` ne détectait rien).
+- [x] **CI verte sur `main` (07/10/2026)** : lint + **Backend 47/47 sous PostGIS réel** + frontend typecheck/build. Correctifs : `geometry_type` inexistant dans `fn_reverse_geocode` (→ `GeometryType(t.geometry)`), `jsonb_object_agg` NULL hors emprise (→ `COALESCE … '{}'`), repository PHP tolérant (try/catch, jamais de 500).
 - [ ] Seed ETL en CI avant tests feature (schéma seul ≠ données) — *si tests feature l'exigent*.
-- [ ] Frontend : installer `eslint-config-next` + `jest`/`@testing-library` puis activer les jobs lint/test (les scripts existent, les deps manquent).
+- [x] Frontend : `eslint` flat-config native + `jest`/`@testing-library` installés, jobs lint/test activés en CI, `MapComponent` refactoré (callbacks mémoïsés, deps exhaustives, `GeoJSONSourceSpecification`), 0 `any`, `tsc`+`eslint`+`jest` verts en local.
 - [x] Job **images** : build + push **GHCR** sur tag `v*.*.*` (critère US-002).
 - [ ] Sur GitHub : création du remote, `main` protégée (PR obligatoire, checks verts).
 - [x] `composer.lock` régénéré sous **PHP 8.2** (plateforme `platform.php=8.2.34` figée dans composer.json).

@@ -3,7 +3,6 @@
 import { MapComponent } from '@/components/map/MapComponent';
 import { SidePanel } from '@/components/ui/SidePanel';
 import { Header } from '@/components/ui/Header';
-import { useMapStore } from '@/lib/store';
 
 export default function HomePage() {
   return (

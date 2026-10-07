@@ -1,12 +1,17 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   Map,
   NavigationControl,
   ScaleControl,
 } from 'maplibre-gl';
-import type { MapMouseEvent, GeoJSONSource, LayerSpecification, SourceSpecification } from 'maplibre-gl';
+import type {
+  GeoJSONSource,
+  GeoJSONSourceSpecification,
+  LayerSpecification,
+  MapMouseEvent,
+} from 'maplibre-gl';
 import 'maplibre-gl/dist/maplibre-gl.css';
 import { useMapStore } from '@/lib/store';
 import { territoryApi } from '@/lib/api';
@@ -81,16 +86,114 @@ export function MapComponent() {
   const {
     activeLayers,
     layerConfigs,
-    selectedTerritory,
-    hoveredTerritory,
-    bbox,
-    isLoading,
     setLoading,
     setMapViewport,
     setSelectedTerritory,
     setHoveredTerritory,
-    setBbox,
   } = useMapStore();
+
+
+
+  const initializeSourcesAndLayers = useCallback(() => {
+    if (!map.current) return;
+
+    const sources: Record<string, GeoJSONSourceSpecification> = {
+      'regions-source': { type: 'geojson', data: { type: 'FeatureCollection', features: [] } },
+      'departments-source': { type: 'geojson', data: { type: 'FeatureCollection', features: [] } },
+      'arrondissements-source': { type: 'geojson', data: { type: 'FeatureCollection', features: [] } },
+      'communes-source': { type: 'geojson', data: { type: 'FeatureCollection', features: [] } },
+    };
+
+    Object.entries(sources).forEach(([id, source]) => {
+      if (!map.current!.getSource(id)) {
+        map.current!.addSource(id, source);
+      }
+    });
+
+    Object.values(LAYER_STYLES).forEach((layer) => {
+      if (!map.current!.getLayer(layer.id)) {
+        map.current!.addLayer(layer);
+      }
+    });
+  }, []);
+
+  const updateSourceData = useCallback((sourceId: string, features: GeoJSON.Feature[]) => {
+    if (!map.current) return;
+    const source = map.current.getSource(sourceId) as GeoJSONSource | undefined;
+    if (source) {
+      source.setData({
+        type: 'FeatureCollection',
+        features,
+      });
+    }
+  }, []);
+
+  const loadInitialData = useCallback(async () => {
+    if (!map.current) return;
+    setLoading(true);
+
+    try {
+      const [regions, departments] = await Promise.all([
+        territoryApi.list({ level: 1, format: 'geojson', limit: 20 }),
+        territoryApi.list({ level: 2, format: 'geojson', limit: 50 }),
+      ]);
+
+      if (map.current) {
+        updateSourceData('regions-source', regions.data.data);
+        updateSourceData('departments-source', departments.data.data);
+      }
+    } catch (error) {
+      console.error('Failed to load initial data:', error);
+    } finally {
+      setLoading(false);
+    }
+  }, [setLoading, updateSourceData]);
+  const handleClick = useCallback((e: MapMouseEvent) => {
+    if (!map.current) return;
+
+    const features = map.current.queryRenderedFeatures(e.point, {
+      layers: QUERYABLE_LAYERS,
+    });
+
+    if (features.length > 0) {
+      setSelectedTerritory(features[0] as unknown as TerritoryFeature);
+    } else {
+      setSelectedTerritory(null);
+    }
+  }, [setSelectedTerritory]);
+
+  const handleMouseMove = useCallback((e: MapMouseEvent) => {
+    if (!map.current) return;
+
+    const features = map.current.queryRenderedFeatures(e.point, {
+      layers: QUERYABLE_LAYERS,
+    });
+
+    if (features.length > 0) {
+      setHoveredTerritory(features[0] as unknown as TerritoryFeature);
+      map.current.getCanvas().style.cursor = 'pointer';
+    } else {
+      setHoveredTerritory(null);
+      map.current.getCanvas().style.cursor = '';
+    }
+  }, [setHoveredTerritory]);
+
+  const updateVisibleLayers = useCallback((zoom: number) => {
+    if (!map.current) return;
+
+    Object.entries(ZOOM_THRESHOLDS).forEach(([layerId, [minZoom, maxZoom]]) => {
+      const config = layerConfigs.find((l) => l.id === layerId);
+      const shouldShow = zoom >= minZoom && zoom < maxZoom && config?.visible;
+
+      if (map.current!.getLayer(LAYER_STYLES[layerId as MapLayerId].id)) {
+        map.current!.setLayoutProperty(
+          LAYER_STYLES[layerId as MapLayerId].id,
+          'visibility',
+          shouldShow ? 'visible' : 'none'
+        );
+      }
+    });
+  }, [layerConfigs]);
 
   useEffect(() => {
     if (!mapContainer.current || map.current) return;
@@ -139,106 +242,7 @@ export function MapComponent() {
       map.current?.remove();
       map.current = null;
     };
-  }, []);
-
-  const initializeSourcesAndLayers = () => {
-    if (!map.current) return;
-
-    const sources: Record<string, SourceSpecification> = {
-      'regions-source': { type: 'geojson', data: { type: 'FeatureCollection', features: [] } },
-      'departments-source': { type: 'geojson', data: { type: 'FeatureCollection', features: [] } },
-      'arrondissements-source': { type: 'geojson', data: { type: 'FeatureCollection', features: [] } },
-      'communes-source': { type: 'geojson', data: { type: 'FeatureCollection', features: [] } },
-    };
-
-    Object.entries(sources).forEach(([id, source]) => {
-      if (!map.current!.getSource(id)) {
-        map.current!.addSource(id, source);
-      }
-    });
-
-    Object.values(LAYER_STYLES).forEach((layer) => {
-      if (!map.current!.getLayer(layer.id)) {
-        map.current!.addLayer(layer);
-      }
-    });
-  };
-
-  const loadInitialData = async () => {
-    if (!map.current) return;
-    setLoading(true);
-
-    try {
-      const [regions, departments] = await Promise.all([
-        territoryApi.list({ level: 1, format: 'geojson', limit: 20 }),
-        territoryApi.list({ level: 2, format: 'geojson', limit: 50 }),
-      ]);
-
-      if (map.current) {
-        updateSourceData('regions-source', regions.data.data);
-        updateSourceData('departments-source', departments.data.data);
-      }
-    } catch (error) {
-      console.error('Failed to load initial data:', error);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const updateSourceData = (sourceId: string, features: GeoJSON.Feature[]) => {
-    if (!map.current) return;
-    const source = map.current.getSource(sourceId) as GeoJSONSource | undefined;
-    if (source) {
-      source.setData({ type: 'FeatureCollection', features });
-    }
-  };
-
-  const handleClick = (e: MapMouseEvent) => {
-    if (!map.current) return;
-
-    const features = map.current.queryRenderedFeatures(e.point, {
-      layers: QUERYABLE_LAYERS,
-    });
-
-    if (features.length > 0) {
-      setSelectedTerritory(features[0] as unknown as TerritoryFeature);
-    } else {
-      setSelectedTerritory(null);
-    }
-  };
-
-  const handleMouseMove = (e: MapMouseEvent) => {
-    if (!map.current) return;
-
-    const features = map.current.queryRenderedFeatures(e.point, {
-      layers: QUERYABLE_LAYERS,
-    });
-
-    if (features.length > 0) {
-      setHoveredTerritory(features[0] as unknown as TerritoryFeature);
-      map.current.getCanvas().style.cursor = 'pointer';
-    } else {
-      setHoveredTerritory(null);
-      map.current.getCanvas().style.cursor = '';
-    }
-  };
-
-  const updateVisibleLayers = (zoom: number) => {
-    if (!map.current) return;
-
-    Object.entries(ZOOM_THRESHOLDS).forEach(([layerId, [minZoom, maxZoom]]) => {
-      const config = layerConfigs.find((l) => l.id === layerId);
-      const shouldShow = zoom >= minZoom && zoom < maxZoom && config?.visible;
-
-      if (map.current!.getLayer(LAYER_STYLES[layerId as MapLayerId].id)) {
-        map.current!.setLayoutProperty(
-          LAYER_STYLES[layerId as MapLayerId].id,
-          'visibility',
-          shouldShow ? 'visible' : 'none'
-        );
-      }
-    });
-  };
+  }, [handleClick, handleMouseMove, initializeSourcesAndLayers, loadInitialData, setHoveredTerritory, setMapViewport, updateVisibleLayers]);
 
   useEffect(() => {
     if (!map.current) return;

@@ -80,8 +80,8 @@ export function SidePanel() {
 
           <div className="border-t border-gray-100 pt-4 space-y-4">
             {activeTab === 'details' && <DetailsTab territory={territory} />}
-            {activeTab === 'hierarchy' && <HierarchyTab territory={territory} />}
-            {activeTab === 'actions' && <ActionsTab territory={territory} />}
+            {activeTab === 'hierarchy' && <HierarchyTab />}
+            {activeTab === 'actions' && <ActionsTab />}
           </div>
 
           <div className="mt-4 border-t border-gray-100 pt-4">
@@ -183,7 +183,7 @@ function DetailsTab({ territory }: { territory: TerritoryFeature }) {
   );
 }
 
-function HierarchyTab({ territory }: { territory: TerritoryFeature }) {
+function HierarchyTab() {
   return (
     <div className="space-y-2">
       <p className="text-sm text-gray-500">L'hiérarchie sera chargée via l'API</p>
@@ -194,7 +194,7 @@ function HierarchyTab({ territory }: { territory: TerritoryFeature }) {
   );
 }
 
-function ActionsTab({ territory }: { territory: TerritoryFeature }) {
+function ActionsTab() {
   return (
     <div className="space-y-2">
       <button className="w-full flex items-center gap-2 px-3 py-2 text-sm text-green-600 hover:bg-green-50 rounded-lg transition-colors">
