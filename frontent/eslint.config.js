@@ -1,4 +1,3 @@
-// ESLint flat config native — Next.js 16 App Router (pas de FlatCompat).
 const js = require('@eslint/js');
 const tseslint = require('typescript-eslint');
 const reactPlugin = require('eslint-plugin-react');
@@ -16,7 +15,6 @@ module.exports = tseslint.config(
     },
     settings: { react: { version: 'detect' } },
     rules: {
-      // CDC : aucun `any` toléré.
       '@typescript-eslint/no-explicit-any': 'error',
       'react-hooks/rules-of-hooks': 'error',
       'react-hooks/exhaustive-deps': 'warn',

@@ -20,6 +20,18 @@ describe('useMapStore (US-015 — état carte)', () => {
     expect(activeLayers).not.toContain('communes');
   });
 
+  it('retire les couches invisibles de activeLayers pour refléter le store', () => {
+    const { toggleLayer } = useMapStore.getState();
+    // 'communes' est invisible dans l'état initial : activeLayers ne la contient pas.
+    expect(useMapStore.getState().activeLayers).not.toContain('communes');
+    // Basculer deux fois restaure l'état initial sans perdre les couches visibles.
+    toggleLayer('regions');
+    expect(useMapStore.getState().activeLayers).not.toContain('regions');
+    toggleLayer('regions');
+    expect(useMapStore.getState().activeLayers).toContain('regions');
+    expect(useMapStore.getState().activeLayers).toContain('departments');
+  });
+
   it('bascule la visibilité des couches sans perdre les autres', () => {
     const { toggleLayer } = useMapStore.getState();
     toggleLayer('communes');
