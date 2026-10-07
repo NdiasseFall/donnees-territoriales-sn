@@ -42,7 +42,7 @@
 | 0.2 | **Initialiser git + dépôt distant** + conventions de commit | Repo local init + `.gitignore` ; remote à créer, `main` protégée | QA-DevOps | 🟡 Local OK, remote à créer |
 | 0.3 | **Cible d'infrastructure** : scénario par défaut **VM + Docker Compose** retenu, hébergeur à choisir | Choix final documenté, VM ≥ 4 vCPU/8 Go/100 Go | PM | 🟡 Par défaut acté |
 | 0.4 | **Persister le plan** + statuts backlog | Ce document | PM | ✅ |
-| 0.5 | **Arbitrage domain « parent direct »** (adjacence de niveau vs graphe de données) | `HierarchyLevel` OU `HierarchyLevelTest` corrigé | Architecte | 🔴 À trancher |
+| 0.5 | **Arbitrage domain « parent direct »** (adjacence de niveau vs graphe de données) | `HierarchyLevel` OU `HierarchyLevelTest` corrigé | Architecte | ✅ Arbitré par CDC §70/§39 : paires parent-enfant encodées dans la VO (commune → département…) |
 
 ---
 
@@ -62,14 +62,14 @@
 - [ ] Frontend : installer `eslint-config-next` + `jest`/`@testing-library` puis activer les jobs lint/test (les scripts existent, les deps manquent).
 - [x] Job **images** : build + push **GHCR** sur tag `v*.*.*` (critère US-002).
 - [ ] Sur GitHub : création du remote, `main` protégée (PR obligatoire, checks verts).
-- [ ] `composer.lock` régénéré sous **PHP 8.2** (actuellement généré sous 8.5).
+- [x] `composer.lock` régénéré sous **PHP 8.2** (plateforme `platform.php=8.2.34` figée dans composer.json).
 
 ### 1c. US-021 — Couverture géospatiale complète (QA-DevOps)
 
 - [ ] Valider en CI les perimètres : territoires, RFC 7946, recherche, bbox, reverse-geocode, datasets.
 - [ ] Tests des **validateurs ETL** : polygone invalide, géométrie vide, mauvais SRID, code dupliqué → codes d'erreur.
 - [ ] Test « `init_all.sql` rejoué + intégrité référentielle » (critère explicite).
-- [ ] Trancher l'échec `HierarchyLevelTest` (Phase 0.5).
+- [x] Trancher l'échec `HierarchyLevelTest` (Phase 0.5) — arbitré CDC §70/§39, VO corrigée, 14/14 verts.
 - **DoD** : CI verte sur `main`, **0 mock spatial**.
 
 ---

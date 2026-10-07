@@ -64,9 +64,38 @@ final class HierarchyLevel
         return $this->level < $other->level;
     }
 
+    /**
+     * Paires (parent, enfant) autorisées — la relation "parent direct"
+     * n'est PAS une simple adjacence de niveau (+1).
+     *
+     * Références CDC :
+     * - §70 Contrôles hiérarchiques : commune → département,
+     *   département → région, localité → commune, absence d'orphelin ;
+     * - §39 chaîne parents : Sénégal → Thiès → Mbour → Commune de Mbour
+     *   (pays → région → département → commune, sans arrondissement).
+     *
+     * @var list<array{int, int}>
+     */
+    private const DIRECT_PARENT_PAIRS = [
+        [self::COUNTRY, self::REGION],             // §70 : pays → région
+        [self::REGION, self::DEPARTMENT],          // §70 : département → région
+        [self::DEPARTMENT, self::ARRONDISSEMENT],  // arrondissement rattaché au département
+        [self::DEPARTMENT, self::COMMUNE],         // §70 + §39 : commune → département
+        [self::ARRONDISSEMENT, self::COMMUNE],     // communes rurales sous arrondissement
+        [self::COMMUNE, self::DISTRICT_VILLAGE],   // §70 : localité → commune
+        [self::DISTRICT_VILLAGE, self::HAMLET],
+    ];
+
+    /**
+     * Vrai si $this est un parent direct autorisé de $other (CDC §70/§39).
+     */
     public function isDirectParentOf(HierarchyLevel $other): bool
     {
-        return ($this->level + 1) === $other->level;
+        return in_array(
+            [$this->level, $other->level],
+            self::DIRECT_PARENT_PAIRS,
+            true
+        );
     }
 
     public function equals(HierarchyLevel $other): bool
