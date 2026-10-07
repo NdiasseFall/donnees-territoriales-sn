@@ -13,7 +13,13 @@ describe('useMapStore (US-015 — état carte)', () => {
     expect(mapViewport.zoom).toBe(6);
   });
 
-<<<<<<< HEAD
+  it('expose les couches nationales par défaut (régions + départements)', () => {
+    const { activeLayers } = useMapStore.getState();
+    expect(activeLayers).toContain('regions');
+    expect(activeLayers).toContain('departments');
+    expect(activeLayers).not.toContain('communes');
+  });
+
   it('retire les couches invisibles de activeLayers pour refléter le store', () => {
     const { toggleLayer } = useMapStore.getState();
     // 'communes' est invisible dans l'état initial : activeLayers ne la contient pas.
@@ -24,12 +30,6 @@ describe('useMapStore (US-015 — état carte)', () => {
     toggleLayer('regions');
     expect(useMapStore.getState().activeLayers).toContain('regions');
     expect(useMapStore.getState().activeLayers).toContain('departments');
-=======
-  it('expose les couches nationales par défaut (régions + départements)', () => {
-    const { activeLayers } = useMapStore.getState();
-    expect(activeLayers).toContain('regions');
-    expect(activeLayers).toContain('departments');
-    expect(activeLayers).not.toContain('communes');
   });
 
   it('bascule la visibilité des couches sans perdre les autres', () => {
@@ -39,7 +39,6 @@ describe('useMapStore (US-015 — état carte)', () => {
     expect(useMapStore.getState().activeLayers).toContain('regions');
     toggleLayer('communes');
     expect(useMapStore.getState().activeLayers).not.toContain('communes');
->>>>>>> main
   });
 
   it('resetFilters restaure les couches nationales et vide la sélection', () => {
