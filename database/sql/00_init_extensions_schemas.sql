@@ -11,6 +11,18 @@ CREATE EXTENSION IF NOT EXISTS "pg_trgm";
 CREATE EXTENSION IF NOT EXISTS "postgis";
 CREATE EXTENSION IF NOT EXISTS "postgis_topology";
 
+-- 1.1 Wrapper IMMUTABLE autour de unaccent() (STABLE) : indispensable pour
+--     toute expression d'index (PG refuse les fonctions STABLE dans un index)
+--     et garantit l'indexation de la recherche plein-texte sans accents (§85).
+--     Requêtes et index doivent passer par cette fonction pour être alignés.
+CREATE OR REPLACE FUNCTION public.immutable_unaccent(p_text text)
+RETURNS text
+LANGUAGE sql
+IMMUTABLE
+PARALLEL SAFE
+RETURNS NULL ON NULL INPUT
+AS $$ SELECT public.unaccent(p_text) $$;
+
 -- 2. Création des 5 schémas d'architecture géospatiale
 CREATE SCHEMA IF NOT EXISTS raw;
 CREATE SCHEMA IF NOT EXISTS staging;

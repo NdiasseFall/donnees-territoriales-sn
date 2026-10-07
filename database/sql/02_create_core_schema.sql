@@ -186,7 +186,7 @@ CREATE INDEX IF NOT EXISTS idx_territories_code_anat ON core.territories(code_an
 
 -- Index de recherche plein texte (GIN avec unaccent et français)
 CREATE INDEX IF NOT EXISTS idx_territories_name_trgm ON core.territories USING GIN (name gin_trgm_ops);
-CREATE INDEX IF NOT EXISTS idx_territories_name_tsv ON core.territories USING GIN (to_tsvector('french', unaccent(name)));
+CREATE INDEX IF NOT EXISTS idx_territories_name_tsv ON core.territories USING GIN (to_tsvector('french', public.immutable_unaccent(name)));
 CREATE INDEX IF NOT EXISTS idx_territories_metadata_gin ON core.territories USING GIN (metadata);
 
 -- ----------------------------------------------------------------------------

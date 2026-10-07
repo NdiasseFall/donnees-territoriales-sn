@@ -173,7 +173,7 @@ BEGIN
     FROM published.territories t
     WHERE t.code ILIKE '%' || p_query || '%'
        OR t.name ILIKE '%' || p_query || '%'
-       OR to_tsvector('french', unaccent(t.name)) @@ plainto_tsquery('french', unaccent(p_query))
+       OR to_tsvector('french', public.immutable_unaccent(t.name)) @@ plainto_tsquery('french', public.immutable_unaccent(p_query))
     ORDER BY
         similarity(t.name, p_query) DESC,
         t.level ASC

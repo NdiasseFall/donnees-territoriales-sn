@@ -50,7 +50,7 @@ CREATE INDEX IF NOT EXISTS idx_pub_parent_id ON published.territories (parent_id
 CREATE INDEX IF NOT EXISTS idx_pub_parent_code ON published.territories (parent_code);
 CREATE INDEX IF NOT EXISTS idx_pub_slug ON published.territories (slug);
 CREATE INDEX IF NOT EXISTS idx_pub_name_trgm ON published.territories USING GIN (name gin_trgm_ops);
-CREATE INDEX IF NOT EXISTS idx_pub_name_tsv ON published.territories USING GIN (to_tsvector('french', unaccent(name)));
+CREATE INDEX IF NOT EXISTS idx_pub_name_tsv ON published.territories USING GIN (to_tsvector('french', public.immutable_unaccent(name)));
 
 -- ----------------------------------------------------------------------------
 -- 2. PROCÉDURE DE PUBLICATION FORMELLE D'UNE VERSION DE JEU DE DONNÉES

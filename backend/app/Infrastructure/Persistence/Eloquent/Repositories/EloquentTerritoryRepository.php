@@ -243,7 +243,7 @@ class EloquentTerritoryRepository implements TerritoryRepositoryInterface
             $q->whereRaw('t.code ILIKE ?', ["%{$cleanQuery}%"])
                 ->orWhereRaw('t.name ILIKE ?', ["%{$cleanQuery}%"])
                 ->orWhereRaw('t.normalized_name ILIKE ?', ['%'.strtoupper($cleanQuery).'%'])
-                ->orWhereRaw("to_tsvector('french', unaccent(t.name)) @@ plainto_tsquery('french', unaccent(?))", [$cleanQuery]);
+                ->orWhereRaw("to_tsvector('french', public.immutable_unaccent(t.name)) @@ plainto_tsquery('french', public.immutable_unaccent(?))", [$cleanQuery]);
         });
 
         $rows = $builder->select([
