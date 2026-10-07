@@ -123,7 +123,7 @@ BEGIN
 
     SELECT jsonb_build_object(
         'point', jsonb_build_object('longitude', p_longitude, 'latitude', p_latitude),
-        'hierarchy', jsonb_object_agg(
+        'hierarchy', COALESCE(jsonb_object_agg(
             LOWER(t.type_code),
             jsonb_build_object(
                 'id', t.id,
@@ -132,11 +132,11 @@ BEGIN
                 'type', t.type_name,
                 'level', t.level
             )
-        )
+        ), '{}'::jsonb)
     ) INTO v_result
     FROM published.territories t
     WHERE ST_Contains(t.geometry, v_point)
-       OR (t.geometry_type = 'ST_Point' AND ST_DWithin(t.geometry::geography, v_point::geography, 1000));
+       OR (GeometryType(t.geometry) = 'POINT' AND ST_DWithin(t.geometry::geography, v_point::geography, 1000));
 
     RETURN v_result;
 END;

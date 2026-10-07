@@ -25,12 +25,17 @@ class PostgisSpatialRepository implements SpatialQueryRepositoryInterface
     {
         // fn_reverse_geocode renvoie un JSONB scalar {point, hierarchy:{type:{...}}}
         // — appel en scalaire (SELECT fn(...)), pas en table.
-        $row = DB::selectOne(
-            'SELECT published.fn_reverse_geocode(?, ?) AS result',
-            [$coordinates->getLongitude(), $coordinates->getLatitude()]
-        );
+        try {
+            $row = DB::selectOne(
+                'SELECT published.fn_reverse_geocode(?, ?) AS result',
+                [$coordinates->getLongitude(), $coordinates->getLatitude()]
+            );
+        } catch (\Throwable) {
+            // Fonction absente ou erreur spatiale : jamais de 500 — résultat vide.
+            return [];
+        }
 
-        $payload = $row->result ?? null;
+        $payload = $row?->result ?? null;
         if (is_string($payload)) {
             $payload = json_decode($payload, true);
         }
