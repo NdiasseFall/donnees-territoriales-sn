@@ -6,7 +6,7 @@ import {
   NavigationControl,
   ScaleControl,
 } from 'maplibre-gl';
-import type { MapMouseEvent, GeoJSONSource, LayerSpecification, SourceSpecification } from 'maplibre-gl';
+import type { MapMouseEvent, GeoJSONSource, LayerSpecification } from 'maplibre-gl';
 import 'maplibre-gl/dist/maplibre-gl.css';
 import { useMapStore } from '@/lib/store';
 import { territoryApi } from '@/lib/api';
@@ -81,15 +81,10 @@ export function MapComponent() {
   const {
     activeLayers,
     layerConfigs,
-    selectedTerritory,
-    hoveredTerritory,
-    bbox,
-    isLoading,
     setLoading,
     setMapViewport,
     setSelectedTerritory,
     setHoveredTerritory,
-    setBbox,
   } = useMapStore();
 
   useEffect(() => {
@@ -182,14 +177,6 @@ export function MapComponent() {
       console.error('Failed to load initial data:', error);
     } finally {
       setLoading(false);
-    }
-  };
-
-  const updateSourceData = (sourceId: string, features: GeoJSON.Feature[]) => {
-    if (!map.current) return;
-    const source = map.current.getSource(sourceId) as GeoJSONSource | undefined;
-    if (source) {
-      source.setData({ type: 'FeatureCollection', features });
     }
   };
 

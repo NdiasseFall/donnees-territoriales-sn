@@ -48,7 +48,7 @@ export const useMapStore = create<MapState & MapActions>((set) => ({
   hoveredTerritory: null,
   searchQuery: '',
   searchResults: [],
-  activeLayers: DEFAULT_LAYERS.map((l) => l.id),
+  activeLayers: DEFAULT_LAYERS.filter((l) => l.visible).map((l) => l.id),
   layerConfigs: DEFAULT_LAYERS,
   bbox: null,
   isPanelOpen: true,
@@ -105,7 +105,7 @@ export const useMapStore = create<MapState & MapActions>((set) => ({
       searchQuery: '',
       searchResults: [],
       bbox: null,
-      activeLayers: DEFAULT_LAYERS.map((l) => l.id),
-      layerConfigs: DEFAULT_LAYERS.map((l) => ({ ...l, visible: l.level <= 2 })),
+      activeLayers: DEFAULT_LAYERS.filter((l) => l.visible).map((l) => l.id),
+      layerConfigs: DEFAULT_LAYERS.map((l) => ({ ...l })),
     }),
 }));
