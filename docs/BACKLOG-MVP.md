@@ -34,7 +34,7 @@ Dérivé du *Cahier des Charges Fonctionnel et Technique v2.0* (§104 — artefa
 | E-02 | Back-office absent (0 contrôleur, 0 écran) | §63-68 | 🔴 Bloquant §91 |
 | E-03 | OpenAPI 3.1 absent | §61, §102 | 🔴 Bloquant §91 |
 | E-04 | Écrans publics 01→07 absents (seul `/` existe) | §56-62 | 🔴 Bloquant §100 |
-| E-05 | Endpoints §38-49 incomplets (children, parents, geometry, map, versions, metadata) | §38-49 | 🟠 Majeur |
+| E-05 | Endpoints §38-49 : `children`, `parents`, `geometry`, `map` ✅ livrés (US-012) ; restent `versions`, `metadata` | §38-49 | 🟡 Mineur (US-012 done) |
 | E-06 | Aucune CI GitHub Actions | §102, §10 | 🟠 Majeur |
 | E-07 | `docker-compose` sans services applicatifs | §102, §10 | 🟠 Majeur |
 | E-08 | URLs stables `/territoire/{type}/{slug}` absentes | §86 | 🟡 Mineur |
@@ -506,7 +506,7 @@ S5                              ██ ██ ██ ██ ██
 | 2 | Créer `backend/tests/` + premiers tests PostGIS (US-021) | QA-DevOps | Fin S2 | ✅ 47 tests créés — couverture à compléter |
 | 3 | Compléter `docker-compose.yml` avec backend + frontend (US-001) | QA-DevOps | Fin S2 | ✅ Livré — validation Docker requise |
 | 4 | Ajouter `.github/workflows/ci.yml` (US-002) | QA-DevOps | Fin S2 | 🟡 Créé — 1ᵉʳ exécution au 1ᵉʳ push |
-| 5 | Compléter `/territories/{id}/children` et `/parents` (US-012) | Backend | Fin S3 | ⚪ Non démarré |
+| 5 | Compléter `/territories/{id}/children` et `/parents` (US-012) | Backend | Fin S3 | ✅ Livré — `code/{code}`, `children`, `parents`, `geometry` (RFC 7946), `map` (§41) + filtres `type/status/search/page/per_page/bbox` (ST_Intersects préparé) |
 
 ---
 

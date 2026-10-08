@@ -13,7 +13,7 @@
 | **US-001** Build reproductible | 🟡 Livré (compose 5 services, 3 Dockerfiles, squelette Laravel booté, health HTTP 200) | Non exécuté sous Docker (machine sans Docker) — **validation requise (jalon J1)** |
 | **US-002** CI/CD | 🟡 `ci.yml` (backend PostGIS réel + lint + frontend + images) | Premier exécution au premier push ; protections `main` à activer sur GitHub |
 | **US-021** Tests | 🟡 47 tests, PostGIS réel en CI | 1 échec domain (`HierarchyLevel` — arbitrage Phase 0.5) ; validateurs ETL à couvrir |
-| **Backend** | 17 routes, boot OK, health 200 | US-012 incomplet, OpenAPI absent, health DB → 503 à faire (US-003) |
+| **Backend** | 22 routes, boot OK, health 200 | US-012 ✅ livré, OpenAPI absent (US-013), health DB → 503 à faire (US-003) |
 | **Frontend** | Prototype 1 route, build + tsc verts | Écrans 01→07 absents ; `eslint`/`jest` à installer (scripts sans deps) |
 | **Data** | Schémas SQL + seed ETL idempotent | D-1→D-4 non arbitrés (🔴 bloquent US-004/006/018/019) |
 | **Admin** | 0 contrôleur, 0 écran | Back-office complet à faire (S5) |
@@ -90,7 +90,7 @@
 
 ## PHASE 3 — API (S3) : v1 complète, documentée, sécurisée
 
-1. **US-012** — Endpoints manquants : `code/{code}`, `/{id}/children`, `/{id}/parents`, `/{id}/geometry` (GeoJSON `application/geo+json`, RFC 7946), `/{id}/map`, filtres `type/level/parent/status/search/page` + `bbox` en **requête préparée** (`ST_Intersects`), erreurs enveloppe §50 (`TERRITORY_NOT_FOUND`).
+1. **US-012** ✅ **Livré** — Endpoints : `code/{code}`, `/{id}/children`, `/{id}/parents`, `/{id}/geometry` (GeoJSON `application/geo+json`, RFC 7946), `/{id}/map`, filtres `type/level/parent/status/search/page` + `bbox` en **requête préparée** (`ST_Intersects`), erreurs enveloppe §50 (`TERRITORY_NOT_FOUND`, `INVALID_BBOX` — 422). Fix associé : `findAncestors` résout l'id avant `core.fn_get_territory_ancestors` (cast BIGINT). Tests : `TerritoryHierarchyApiTest` (fixtures PostGIS en transaction).
 2. **US-013** — OpenAPI 3.1 : 100 % des routes v1, schéma d'erreur §50 cohérent, `/api/docs` public, headers `X-RateLimit-*` documentés.
 3. **US-014** — Reverse-geocode : hiérarchie complète `country → … → locality`, `404` hors emprise, indicateur de confiance.
 4. **US-022** — Sécurité : `key_hash` uniquement (§52), 429 + `Retry-After`, SQL préparé partout, matrice RBAC §55, health DB → **503** (critère US-003).

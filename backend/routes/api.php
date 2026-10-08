@@ -29,14 +29,20 @@ Route::prefix('v1')->group(function () {
             Route::post('/keys/{uuid}/regenerate', [ApiKeyController::class, 'regenerate'])->name('api.v1.auth.keys.regenerate');
         });
 
-    // Territoires administratifs
+    // Territoires administratifs (routes littérales et dynamiques ordonnées :
+    // "code/{code}" et les suffixes statiques sont déclarés avant "{code}").
     Route::prefix('territories')->group(function () {
+        Route::get('/code/{code}', [TerritoryController::class, 'show'])->name('api.v1.territories.show_by_code');
+        Route::get('/{code}/children', [TerritoryController::class, 'children'])->name('api.v1.territories.children');
+        Route::get('/{code}/parents', [TerritoryController::class, 'parents'])->name('api.v1.territories.parents');
+        Route::get('/{code}/geometry', [TerritoryController::class, 'geometry'])->name('api.v1.territories.geometry');
+        Route::get('/{code}/map', [TerritoryController::class, 'map'])->name('api.v1.territories.map');
         Route::get('/', [TerritoryController::class, 'index'])->name('api.v1.territories.index');
         Route::get('/regions', [TerritoryController::class, 'regions'])->name('api.v1.territories.regions');
         Route::get('/departments', [TerritoryController::class, 'departments'])->name('api.v1.territories.departments');
         Route::get('/communes', [TerritoryController::class, 'communes'])->name('api.v1.territories.communes');
-        Route::get('/{code}', [TerritoryController::class, 'show'])->name('api.v1.territories.show');
         Route::get('/{code}/hierarchy', [TerritoryController::class, 'hierarchy'])->name('api.v1.territories.hierarchy');
+        Route::get('/{code}', [TerritoryController::class, 'show'])->name('api.v1.territories.show');
     });
 
     // Opérations géospatiales PostGIS
