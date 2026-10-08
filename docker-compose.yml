@@ -37,6 +37,8 @@ services:
       - ./database/sql/04_create_staging_schema.sql:/docker-entrypoint-initdb.d/04_create_staging_schema.sql:ro
       - ./database/sql/05_create_published_schema.sql:/docker-entrypoint-initdb.d/05_create_published_schema.sql:ro
       - ./database/sql/06_spatial_helper_functions.sql:/docker-entrypoint-initdb.d/06_spatial_helper_functions.sql:ro
+      # 07 : purge idempotente des codes legacy accentués (stabilisation).
+      - ./database/sql/07_purge_legacy_accented_codes.sql:/docker-entrypoint-initdb.d/07_purge_legacy_accented_codes.sql:ro
     networks:
       - territorial_net
     healthcheck:

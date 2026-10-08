@@ -74,7 +74,8 @@ jobs:
                       database/sql/03_create_raw_schema.sql \
                       database/sql/04_create_staging_schema.sql \
                       database/sql/05_create_published_schema.sql \
-                      database/sql/06_spatial_helper_functions.sql; do
+                      database/sql/06_spatial_helper_functions.sql \
+                      database/sql/07_purge_legacy_accented_codes.sql; do
             echo "--> Applying $file"
             psql -h localhost -U territorial -d territorial_test -v ON_ERROR_STOP=1 -f "$file"
           done
