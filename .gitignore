@@ -13,6 +13,9 @@ frontent/*.tgz
 .env
 .env.*
 !.env.example
+# .env.testing : valeurs de test non secrètes, requis par le build Docker backend
+# (Dockerfile : cp .env.testing .env pour satisfaire phpdotenv sans warning).
+!.env.testing
 
 # --- Backend Laravel ---
 backend/.phpunit.cache/
