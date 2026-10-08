@@ -240,10 +240,14 @@ class EloquentTerritoryRepository implements TerritoryRepositoryInterface
         }
 
         $cleanQuery = trim($query);
-        $builder->where(function ($q) use ($cleanQuery) {
-            $q->whereRaw('t.code ILIKE ?', ["%{$cleanQuery}%"])
-                ->orWhereRaw('t.name ILIKE ?', ["%{$cleanQuery}%"])
-                ->orWhereRaw("to_tsvector('french', public.immutable_unaccent(t.name)) @@ plainto_tsquery('french', public.immutable_unaccent(?))", [$cleanQuery]);
+        // CDC §85 : « mbour / M'bour » homogène — normalisation symétrique :
+        // l'apostrophe est supprimée des deux côtés (colonne + requête).
+        // M'bour -> Mbour, Mbour -> Mbour : les deux requêtes matchent identiquement.
+        $normalizedQuery = str_replace("'", '', $cleanQuery);
+        $builder->where(function ($q) use ($normalizedQuery) {
+            $q->whereRaw("REPLACE(t.code, '''', '') ILIKE ?", ["%{$normalizedQuery}%"])
+                ->orWhereRaw("REPLACE(t.name, '''', '') ILIKE ?", ["%{$normalizedQuery}%"])
+                ->orWhereRaw("to_tsvector('french', public.immutable_unaccent(REPLACE(t.name, '''', ''))) @@ plainto_tsquery('french', public.immutable_unaccent(?))", [$normalizedQuery]);
         });
 
         $rows = $builder->select([
