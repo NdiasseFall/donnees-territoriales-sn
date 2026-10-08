@@ -1,12 +1,13 @@
 # =============================================================================
 # Backend Laravel — Plateforme Nationale de Données Territoriales du Sénégal
 # PHP 8.2 (CLI + serveur intégré de développement, cf. US-001)
+# Fix stabilisation : extension phpredis (CACHE/SESSION/QUEUE = redis en compose).
 # =============================================================================
 
 FROM php:8.2-cli
 
 # Extensions PHP requises : PDO PostgreSQL (PostGIS), zip (Composer),
-# curl (healthcheck HTTP).
+# redis (CACHE/SESSION/QUEUE Redis — cf. compose), curl (healthcheck HTTP).
 RUN apt-get update \
     && apt-get install -y --no-install-recommends \
         libpq-dev \
@@ -14,6 +15,8 @@ RUN apt-get update \
         curl \
         git \
         unzip \
+    && pecl install redis \
+    && docker-php-ext-enable redis \
     && docker-php-ext-install pdo_pgsql zip \
     && rm -rf /var/lib/apt/lists/*
 
@@ -33,6 +36,10 @@ RUN composer install \
         --no-scripts
 
 # Code applicatif puis autoload complet + découverte des packages.
+# phpdotenv exige un fichier .env lisible (warning sinon, et phpunit a
+# failOnWarning=true). .env.testing est commité (valeurs non secrètes,
+# APP_KEY vide — jamais de secret en dépôt) et copié en .env dans l'image ;
+# l'APP_KEY est générée à la construction (jamais celle de la source).
 COPY . .
 RUN composer dump-autoload --optimize \
     && mkdir -p \
@@ -42,7 +49,9 @@ RUN composer dump-autoload --optimize \
         storage/framework/views \
         storage/logs \
         bootstrap/cache \
-    && php artisan package:discover --ansi
+    && php artisan package:discover --ansi \
+    && cp .env.testing .env \
+    && php artisan key:generate --force --ansi
 
 EXPOSE 8000
 

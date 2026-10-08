@@ -394,10 +394,19 @@ def seed_senegal_administrative_data(auto_publish: bool = True) -> None:
                     ON CONFLICT DO NOTHING;
                 """), {"parent_id": reg_id, "child_id": dept_id, "version_id": version_id})
 
-                # Communes
+                # Communes — code ASCII strict ([A-Z0-9_-], cf. TerritoryCode) :
+                # translittération unidecode des accents (Médina -> MEDI, pas MÉDI).
                 for com_name in dept.get("communes", []):
                     com_slug = com_name.lower().replace(" ", "-").replace("'", "")
-                    com_code = f"{dept['code']}-{com_slug[:4].upper()}"
+                    ascii_slug = (
+                        com_slug.replace("é", "e").replace("è", "e").replace("ê", "e").replace("ë", "e")
+                        .replace("à", "a").replace("â", "a").replace("ä", "a")
+                        .replace("î", "i").replace("ï", "i")
+                        .replace("ô", "o").replace("ö", "o")
+                        .replace("ù", "u").replace("û", "u").replace("ü", "u")
+                        .replace("ç", "c").replace("ñ", "n")
+                    )
+                    com_code = f"{dept['code']}-{ascii_slug[:4].upper()}"
 
                     com_geom = MultiPolygon([Polygon([
                         (dept_geom.centroid.x - 0.05, dept_geom.centroid.y - 0.05),

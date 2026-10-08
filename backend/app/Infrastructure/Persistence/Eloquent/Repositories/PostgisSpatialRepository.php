@@ -95,7 +95,14 @@ class PostgisSpatialRepository implements SpatialQueryRepositoryInterface
 
         $territories = [];
         foreach ($codes as $code) {
-            $territory = $this->territoryRepository->findByCode(new TerritoryCode($code));
+            // Données legacy/seed (ex: commune « Médina » générée « SN-DK-DK-MÉDI »)
+            // non conformes au pattern strict : on les ignore au lieu de lever un 500.
+            try {
+                $territoryCode = new TerritoryCode($code);
+            } catch (\InvalidArgumentException) {
+                continue;
+            }
+            $territory = $this->territoryRepository->findByCode($territoryCode);
             if ($territory !== null) {
                 $territories[] = $territory;
             }
@@ -128,7 +135,12 @@ class PostgisSpatialRepository implements SpatialQueryRepositoryInterface
 
         $territories = [];
         foreach ($codes as $code) {
-            $territory = $this->territoryRepository->findByCode(new TerritoryCode($code));
+            try {
+                $territoryCode = new TerritoryCode($code);
+            } catch (\InvalidArgumentException) {
+                continue;
+            }
+            $territory = $this->territoryRepository->findByCode($territoryCode);
             if ($territory !== null) {
                 $territories[] = $territory;
             }
