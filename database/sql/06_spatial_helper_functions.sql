@@ -3,10 +3,15 @@
 -- Fonctions spatiales et utilitaires API (GeoJSON RFC 7946, Reverse Geocoding)
 -- ============================================================================
 
--- ----------------------------------------------------------------------------
+-- ---------------------------------------------------------------------------- 
 -- 1. EXPORT D'UN TERRITOIRE EN FORMAT GEOJSON FEATURE (RFC 7946)
 -- ----------------------------------------------------------------------------
-CREATE OR REPLACE FUNCTION published.fn_get_territory_geojson(p_code VARCHAR)
+-- p_simplified : rendu allégé (colonne simplified_geometry) pour le zoom carte ;
+-- la tolérance de simplification est pré-calculée en amont (ETL / trigger).
+CREATE OR REPLACE FUNCTION published.fn_get_territory_geojson(
+    p_code VARCHAR,
+    p_simplified BOOLEAN DEFAULT FALSE
+)
 RETURNS JSONB AS $$
 DECLARE
     v_result JSONB;
@@ -14,7 +19,12 @@ BEGIN
     SELECT jsonb_build_object(
         'type', 'Feature',
         'id', t.id,
-        'geometry', ST_AsGeoJSON(t.geometry)::jsonb,
+        'geometry', ST_AsGeoJSON(
+            CASE WHEN p_simplified
+                 THEN COALESCE(t.simplified_geometry, t.geometry)
+                 ELSE t.geometry
+            END
+        )::jsonb,
         'bbox', jsonb_build_array(
             ST_XMin(t.bbox), ST_YMin(t.bbox),
             ST_XMax(t.bbox), ST_YMax(t.bbox)
@@ -57,7 +67,8 @@ CREATE OR REPLACE FUNCTION published.fn_get_territories_geojson_collection(
     p_max_lon NUMERIC DEFAULT NULL,
     p_max_lat NUMERIC DEFAULT NULL,
     p_use_simplified BOOLEAN DEFAULT TRUE,
-    p_limit INTEGER DEFAULT 500
+    p_limit INTEGER DEFAULT 500,
+    p_level INTEGER DEFAULT NULL -- filtre de niveau hiérarchique (API ?level=)
 )
 RETURNS JSONB AS $$
 DECLARE
@@ -98,6 +109,7 @@ BEGIN
         FROM published.territories t
         WHERE (p_type_code IS NULL OR t.type_code = p_type_code)
           AND (p_parent_code IS NULL OR t.parent_code = p_parent_code)
+          AND (p_level IS NULL OR t.level = p_level)
           AND (v_bbox_geom IS NULL OR ST_Intersects(t.geometry, v_bbox_geom))
         ORDER BY t.level, t.name
         LIMIT p_limit
