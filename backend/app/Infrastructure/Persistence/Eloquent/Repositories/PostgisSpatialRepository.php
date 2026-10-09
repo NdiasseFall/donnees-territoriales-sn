@@ -155,13 +155,21 @@ class PostgisSpatialRepository implements SpatialQueryRepositoryInterface
         bool $simplified = false,
         float $simplifyTolerance = 0.001
     ): string {
+        // Appel positionnel calé sur published.fn_get_territories_geojson_collection
+        // (9e paramètre = filtre de niveau). simplifyTolerance n'est pas transmis :
+        // la colonne simplified_geometry est pré-calculée (trigger / ETL).
         $result = DB::selectOne(
-            'SELECT published.fn_get_territories_geojson_collection(?, ?, ?, ?) as collection',
+            'SELECT published.fn_get_territories_geojson_collection(?, ?, ?, ?, ?, ?, ?, ?, ?) as collection',
             [
-                $level?->getLevel(),
-                $parentCode,
-                $simplified,
-                $simplifyTolerance,
+                null,               // p_type_code (non exposé sur cet appel)
+                $parentCode,        // p_parent_code
+                null,               // p_min_lon
+                null,               // p_min_lat
+                null,               // p_max_lon
+                null,               // p_max_lat
+                $simplified,        // p_use_simplified
+                500,                // p_limit
+                $level?->getLevel(), // p_level
             ]
         );
 
@@ -173,15 +181,22 @@ class PostgisSpatialRepository implements SpatialQueryRepositoryInterface
         bool $simplified = false,
         float $simplifyTolerance = 0.001
     ): ?string {
+        // Signature alignée sur published.fn_get_territory_geojson(code, simplified) :
+        // l'ancien appel à 3 arguments (tolerance) provoquait un 500 « function does
+        // not exist ». simplifyTolerance reste non transmis (simplified pré-calculé).
         $result = DB::selectOne(
-            'SELECT published.fn_get_territory_geojson(?, ?, ?) as feature',
-            [
-                $code,
-                $simplified,
-                $simplifyTolerance,
-            ]
+            'SELECT published.fn_get_territory_geojson(?, ?) as feature',
+            [$code, $simplified]
         );
 
-        return $result?->feature ?? null;
+        $feature = $result?->feature ?? null;
+        if ($feature === null) {
+            return null;
+        }
+        if (is_array($feature)) {
+            return json_encode($feature, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+        }
+
+        return $feature;
     }
 }
