@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Controllers\Api\V1\ApiDocsController;
 use App\Http\Controllers\Api\V1\Auth\ApiKeyController;
 use App\Http\Controllers\Api\V1\DatasetController;
 use App\Http\Controllers\Api\V1\HealthCheckController;
@@ -14,6 +15,10 @@ use Illuminate\Support\Facades\Route;
 |--------------------------------------------------------------------------
 | Versioning strict v1, format JSON & GeoJSON (RFC 7946), PostGIS EPSG:4326.
 */
+
+// Documentation OpenAPI 3.1 (US-013, CDC §61) : lecture anonyme sur /api/docs.
+Route::get('/docs', [ApiDocsController::class, 'show'])->name('api.docs.show');
+Route::get('/docs/openapi.yaml', [ApiDocsController::class, 'spec'])->name('api.docs.spec');
 
 Route::prefix('v1')->group(function () {
 

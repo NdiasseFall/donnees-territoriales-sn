@@ -6,6 +6,7 @@ namespace App\Exceptions;
 
 use Illuminate\Foundation\Exceptions\Handler as ExceptionHandler;
 use Illuminate\Support\Str;
+use Illuminate\Validation\ValidationException;
 use Symfony\Component\HttpKernel\Exception\HttpExceptionInterface;
 use Throwable;
 
@@ -14,6 +15,9 @@ use Throwable;
  *
  * Toute réponse JSON d'erreur HTTP porte la structure :
  *   { "error": { "code": "...", "message": "...", "request_id": "..." } }
+ *
+ * Les erreurs de validation (HTTP 422) suivent la même enveloppe, avec un
+ * membre optionnel `errors` détaillant les champs fautifs (US-013).
  */
 class Handler extends ExceptionHandler
 {
@@ -38,6 +42,17 @@ class Handler extends ExceptionHandler
      */
     public function render(mixed $request, Throwable $e): mixed
     {
+        if ($request->expectsJson() && $e instanceof ValidationException) {
+            return response()->json([
+                'error' => [
+                    'code' => 'VALIDATION_FAILED',
+                    'message' => 'La requête contient des champs invalides.',
+                    'request_id' => (string) Str::uuid(),
+                    'errors' => $e->errors(),
+                ],
+            ], 422);
+        }
+
         if ($request->expectsJson() && $e instanceof HttpExceptionInterface) {
             $statusCode = $e->getStatusCode();
 

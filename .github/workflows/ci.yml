@@ -108,6 +108,10 @@ jobs:
       - name: Style de code (Pint)
         working-directory: backend
         run: vendor/bin/pint --test
+      # Contrat OpenAPI 3.1 : redocly échoue sur toute erreur de schéma.
+      # L'ambiguïté de chemins est neutralisée via redocly.yaml (ordre Laravel).
+      - name: Contrat OpenAPI (redocly)
+        run: npx --yes @redocly/cli@1.25.11 lint backend/storage/api/openapi.yaml
 
   frontend:
     name: Frontend (typecheck + build)
