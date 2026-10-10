@@ -178,6 +178,54 @@ components:
         type: string
         maxLength: 100
       example: Mbour
+
+    DatasetSearchQuery:
+      name: q
+      in: query
+      required: false
+      description: |
+        Terme de recherche du catalogue de jeux de données (plein texte + trigrammes,
+        insensible à la casse et aux apostrophes, CDC §85). Deux caractères minimum.
+        L'alias `search` est accepté comme synonyme.
+      schema:
+        type: string
+        minLength: 2
+        maxLength: 100
+      example: cadastre
+
+    DatasetSearchAliasQuery:
+      name: search
+      in: query
+      required: false
+      description: Alias de `q` (rétrocompatibilité).
+      schema:
+        type: string
+        minLength: 2
+        maxLength: 100
+      example: cadastre
+
+    DatasetOrderQuery:
+      name: order
+      in: query
+      required: false
+      description: |
+        Champ sur lequel trier (name, updated_at, created_at).
+      schema:
+        type: string
+        enum: [name, updated_at, created_at]
+      example: name
+
+    DatasetDirectionQuery:
+      name: direction
+      in: query
+      required: false
+      description: |
+        Sens du tri (asc ou desc).
+      schema:
+        type: string
+        enum: [asc, desc]
+      example: desc
+
     PageQuery:
       name: page
       in: query
@@ -1622,12 +1670,18 @@ paths:
       description: |
         Liste paginée des jeux de données du catalogue, chacun accompagné de sa
         version publiée la plus récente. Filtres optionnels par catégorie et
-        niveau d'accès.
+        niveau d'accès, recherche plein-texte et tri.
       operationId: listDatasets
       security: []
       parameters:
         - $ref: '#/components/parameters/CategoryQuery'
         - $ref: '#/components/parameters/AccessLevelQuery'
+        - $ref: '#/components/parameters/DatasetSearchQuery'
+        - $ref: '#/components/parameters/DatasetSearchAliasQuery'
+        - $ref: '#/components/parameters/DatasetOrderQuery'
+        - $ref: '#/components/parameters/DatasetDirectionQuery'
+        - $ref: '#/components/parameters/PageQuery'
+        - $ref: '#/components/parameters/PerPageQuery'
         - $ref: '#/components/parameters/LimitQuery'
         - $ref: '#/components/parameters/OffsetQuery'
       responses:
@@ -1644,6 +1698,25 @@ paths:
                     example: true
                   count:
                     type: integer
+                    description: Nombre d'éléments retournés sur la page courante.
+                  total:
+                    type: integer
+                    description: Nombre total d'éléments correspondant aux filtres.
+                  current_page:
+                    type: integer
+                    description: Numéro de la page courante.
+                  per_page:
+                    type: integer
+                    description: Nombre d'éléments par page.
+                  last_page:
+                    type: integer
+                    description: Dernière page disponible.
+                  from:
+                    type: integer
+                    description: Numéro du premier élément de la page courante.
+                  to:
+                    type: integer
+                    description: Numéro du dernier élément de la page courante.
                   data:
                     type: array
                     items:

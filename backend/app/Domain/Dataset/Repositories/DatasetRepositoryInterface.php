@@ -23,11 +23,28 @@ interface DatasetRepositoryInterface
     public function findAll(
         ?string $category = null,
         ?AccessLevel $accessLevel = null,
+        string $search = '',
+        string $order = 'name',
+        string $direction = 'asc',
         int $limit = 50,
         int $offset = 0
     ): array;
+    public function countByCriteria(
+        ?string $category = null,
+        ?AccessLevel $accessLevel = null,
+        string $search = ''
+    ): int;
 
     public function findLatestPublishedVersion(int $datasetId): ?DatasetVersion;
+
+
+    /**
+     * Recherche du catalogue (nom, description, catégorie, producteur), insensible
+     * à la casse et aux apostrophes, avec trigrammes et plein-texte français.
+     *
+     * @return Dataset[]
+     */
+    public function search(string $query, int $limit = 20): array;
 
     /**
      * @return DatasetVersion[]
