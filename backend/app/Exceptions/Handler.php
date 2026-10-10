@@ -56,13 +56,22 @@ class Handler extends ExceptionHandler
         if ($request->expectsJson() && $e instanceof HttpExceptionInterface) {
             $statusCode = $e->getStatusCode();
 
-            return response()->json([
+            $response = response()->json([
                 'error' => [
                     'code' => (string) $statusCode,
                     'message' => $e->getMessage() !== '' ? $e->getMessage() : 'Erreur HTTP '.$statusCode,
                     'request_id' => (string) Str::uuid(),
                 ],
             ], $statusCode);
+
+            // US-022 (CDC §53) : propager les en-têtes de l'exception
+            // (ex. Retry-After et X-RateLimit-* posés par ThrottleRequests
+            // sur un 429), sinon l'enveloppe §50 les perdrait.
+            foreach ($e->getHeaders() as $header => $value) {
+                $response->headers->set($header, $value, true);
+            }
+
+            return $response;
         }
 
         return parent::render($request, $e);

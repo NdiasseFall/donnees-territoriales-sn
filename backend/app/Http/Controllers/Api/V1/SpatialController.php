@@ -18,6 +18,7 @@ use App\Http\Requests\Api\V1\ReverseGeocodeRequest;
 use App\Http\Requests\Api\V1\SpatialIntersectionRequest;
 use App\Http\Resources\Api\V1\GeoJsonFeatureCollectionResource;
 use App\Http\Resources\Api\V1\TerritoryResource;
+use App\Http\Responses\ApiError;
 use Illuminate\Http\JsonResponse;
 
 class SpatialController extends Controller
@@ -41,12 +42,26 @@ class SpatialController extends Controller
 
         $result = $this->reverseGeocodeHandler->handle($query);
 
+        // US-014 (CDC §44) : un point hors emprise ou dans l'océan renvoie un
+        // 404 explicite — jamais une commune arbitraire. L'enveloppe d'erreur
+        // suit la norme §50.
+        if ($result->isEmpty()) {
+            return ApiError::make(
+                'REVERSE_GEOCODE_OUTSIDE_TERRITORY',
+                "Aucun territoire ne couvre le point ({$result->longitude}, {$result->latitude}).",
+                404
+            );
+        }
+
         return response()->json([
             'success' => true,
             'query' => [
                 'longitude' => $result->longitude,
                 'latitude' => $result->latitude,
             ],
+            // Indicateur de confiance (tolérance de frontière) + distance brute.
+            'confidence' => $result->confidence,
+            'boundary_distance_m' => $result->boundaryDistanceM,
             'hierarchy' => [
                 'country' => $result->country ? new TerritoryResource($result->country) : null,
                 'region' => $result->region ? new TerritoryResource($result->region) : null,

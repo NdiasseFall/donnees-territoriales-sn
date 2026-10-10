@@ -7,6 +7,9 @@
 \echo '--> [1/6] Initialisation des extensions et des 5 schémas PostGIS...'
 \i 00_init_extensions_schemas.sql
 
+\echo '--> [1b/6] Création du schéma auth (identités et clés API hachées)...'
+\i 00b_create_auth_schema.sql
+
 \echo '--> [2/6] Création du schéma audit...'
 \i 01_create_audit_schema.sql
 

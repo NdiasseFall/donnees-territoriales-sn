@@ -233,6 +233,8 @@ Légende priorité : **P0** = Must (MVP §91) · **P1** = Should (V2) · **P2** 
 - **Given** un point hors emprise ou dans l'océan, **When** j'appelle le service, **Then** il retourne un `404` explicite, jamais une commune arbitraire.
 - **Given** un point proche d'une frontière, **When** je le géocode, **Then** la tolérance est gérée et le résultat porte un indicateur de confiance.
 
+> ✅ **Livré** (S3) — Hiérarchie complète + 404 explicite hors emprise (`REVERSE_GEOCODE_OUTSIDE_TERRITORY`) + indicateur de confiance `high`/`medium`/`low` et `boundary_distance_m` (distance PostGIS à la frontière du territoire le plus fin). Tests `ReverseGeocodeApiTest` (PostGIS réel). Contrat OpenAPI `/api/docs` à jour.
+
 ---
 
 ### EPIC 06 — Web GIS (écran principal)
@@ -333,6 +335,8 @@ Légende priorité : **P0** = Must (MVP §91) · **P1** = Should (V2) · **P2** 
 - **Given** un utilisateur public, **When** il dépasse sa limite, **Then** la requête reçoit HTTP 429 avec les en-têtes `Retry-After` et `X-RateLimit-*`.
 - **Given** une entrée utilisateur sur `search` ou `bbox`, **When** elle est traitée, **Then** les requêtes SQL sont préparées — aucune concaténation de valeur dans du SQL.
 - **Given** une tentative d'accès à une route `/admin` par un utilisateur non autorisé, **When** elle est faite, **Then** elle est refusée (matrice RBAC §55).
+
+> ✅ **Livré** (S3) — Schéma `auth` (users + api_keys hachées, §52) ; résolution Bearer→ApiKey ; RBAC §55 via `EnsureApiKeyPermission` (route `/admin/audit/summary` : 401 sans clé, 403 sans permission `administer`, 200 autorisé) ; 429 avec `Retry-After`/`X-RateLimit-*` propagés dans l'enveloppe §50 ; SQL préparé (search/bbox) ; health DB down → **503**. Tests `SecurityControlsApiTest` (PostgreSQL réel).
 
 #### US-023 — Non-fonctionnel : performance, responsive, accessibilité
 

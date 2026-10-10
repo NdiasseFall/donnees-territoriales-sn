@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Http\Middleware;
 
+use App\Http\Responses\ApiError;
 use Closure;
 use Illuminate\Http\Request;
 use Symfony\Component\HttpFoundation\Response;
@@ -38,19 +39,34 @@ class RateLimitByApiKeyTier
         $maxAttempts = $limit;
         $decayMinutes = 1;
 
-        if (app('cache')->has($key)) {
-            $attempts = (int) app('cache')->get($key);
-            if ($attempts >= $maxAttempts) {
-                return response()->json([
-                    'error' => 'Limite de requêtes atteinte pour ce tier.',
-                    'retry_after_seconds' => 60,
-                ], 429)->header('Retry-After', '60');
-            }
-            app('cache')->increment($key);
-        } else {
-            app('cache')->put($key, 1, now()->addMinutes(1));
+        $attempts = (int) app('cache')->get($key, 0);
+
+        if ($attempts >= $maxAttempts) {
+            // US-022 (CDC §53) : 429 en enveloppe §50, avec en-têtes standard.
+            // Retry-After + X-RateLimit-* (conformes à la doc OpenAPI /api/docs).
+            $retryAfter = 60;
+            $response = ApiError::make(
+                'RATE_LIMIT_EXCEEDED',
+                "Limite de requêtes atteinte pour ce tier ({$maxAttempts}/min). Réessayez dans {$retryAfter}s.",
+                429
+            );
+            $response->headers->set('Retry-After', (string) $retryAfter);
+            $response->headers->set('X-RateLimit-Limit', (string) $maxAttempts);
+            $response->headers->set('X-RateLimit-Remaining', '0');
+
+            return $response;
         }
 
-        return $next($request);
+        if ($attempts === 0) {
+            app('cache')->put($key, 1, now()->addMinutes($decayMinutes));
+        } else {
+            app('cache')->increment($key);
+        }
+
+        $response = $next($request);
+        $response->headers->set('X-RateLimit-Limit', (string) $maxAttempts);
+        $response->headers->set('X-RateLimit-Remaining', (string) max(0, $maxAttempts - $attempts - 1));
+
+        return $response;
     }
 }

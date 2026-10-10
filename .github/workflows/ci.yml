@@ -69,6 +69,7 @@ jobs:
       - name: Initialisation du schéma PostGIS
         run: |
           for file in database/sql/00_init_extensions_schemas.sql \
+                      database/sql/00b_create_auth_schema.sql \
                       database/sql/01_create_audit_schema.sql \
                       database/sql/02_create_core_schema.sql \
                       database/sql/03_create_raw_schema.sql \

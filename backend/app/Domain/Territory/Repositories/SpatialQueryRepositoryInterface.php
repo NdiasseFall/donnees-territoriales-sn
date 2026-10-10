@@ -17,7 +17,16 @@ interface SpatialQueryRepositoryInterface
     /**
      * Géocodage inverse : retourne le territoire englobant un point donné.
      *
-     * @return array<int, array{level: int, type: string, code: string, name: string}>
+     * Le tableau de résultats porte, en plus des niveaux résolus, l'indicateur
+     * de confiance US-014 (distance à la frontière du territoire le plus fin) :
+     *   - 'confidence'          => 'high'|'medium'|'low'|null
+     *   - 'boundary_distance_m' => float|null
+     *
+     * @return array{
+     *     levels: array<int, array{level: int, type: string, code: string, name: string}>,
+     *     confidence: string|null,
+     *     boundary_distance_m: float|null
+     * }
      */
     public function reverseGeocode(Coordinates $coordinates, ?HierarchyLevel $targetLevel = null): array;
 

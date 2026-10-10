@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Controllers\Api\V1\AdminController;
 use App\Http\Controllers\Api\V1\ApiDocsController;
 use App\Http\Controllers\Api\V1\Auth\ApiKeyController;
 use App\Http\Controllers\Api\V1\DatasetController;
@@ -26,7 +27,7 @@ Route::prefix('v1')->group(function () {
     Route::get('/health', [HealthCheckController::class, 'health'])->name('api.v1.health');
 
     // Authentification / Gestion des clés API (Sanctum + clé API requise)
-    Route::middleware(['auth:sanctum', 'api.key.active', 'throttle:api.key'])
+    Route::middleware(['auth:sanctum', 'api.key', 'api.key.active', 'throttle:api.key'])
         ->prefix('auth')->group(function () {
             Route::post('/keys', [ApiKeyController::class, 'store'])->name('api.v1.auth.keys.store');
             Route::get('/keys', [ApiKeyController::class, 'index'])->name('api.v1.auth.keys.index');
@@ -65,5 +66,12 @@ Route::prefix('v1')->group(function () {
         Route::get('/', [DatasetController::class, 'index'])->name('api.v1.datasets.index');
         Route::get('/{slug}', [DatasetController::class, 'show'])->name('api.v1.datasets.show');
     });
+
+    // Administration (matrice RBAC §55) : résout le jeton puis exige la
+    // permission « administer ». Sans clé ou sans permission → 403 (§50).
+    Route::middleware(['api.key', 'api.key.active', 'api.key.permission:administer'])
+        ->prefix('admin')->group(function () {
+            Route::get('/audit/summary', [AdminController::class, 'auditSummary'])->name('api.v1.admin.audit.summary');
+        });
 
 });

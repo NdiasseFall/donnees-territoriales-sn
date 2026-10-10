@@ -28,7 +28,11 @@ final class ReverseGeocodeHandler
         $coordinates = new Coordinates($query->longitude, $query->latitude);
         $targetLevel = $query->targetLevel !== null ? new HierarchyLevel($query->targetLevel) : null;
 
-        $results = $this->spatialRepository->reverseGeocode($coordinates, $targetLevel);
+        $payload = $this->spatialRepository->reverseGeocode($coordinates, $targetLevel);
+
+        $results = $payload['levels'] ?? [];
+        $confidence = $payload['confidence'] ?? null;
+        $boundaryDistanceM = $payload['boundary_distance_m'] ?? null;
 
         $levelsMap = [];
         foreach ($results as $item) {
@@ -48,7 +52,9 @@ final class ReverseGeocodeHandler
             arrondissement: $levelsMap[HierarchyLevel::ARRONDISSEMENT] ?? null,
             commune: $levelsMap[HierarchyLevel::COMMUNE] ?? null,
             districtOrVillage: $levelsMap[HierarchyLevel::DISTRICT_VILLAGE] ?? null,
-            hamlet: $levelsMap[HierarchyLevel::HAMLET] ?? null
+            hamlet: $levelsMap[HierarchyLevel::HAMLET] ?? null,
+            confidence: $confidence,
+            boundaryDistanceM: $boundaryDistanceM
         );
     }
 }

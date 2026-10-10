@@ -71,6 +71,8 @@ tags:
     description: Catalogue des jeux de données publiés.
   - name: Authentification
     description: Gestion des clés API (Sanctum).
+  - name: Administration
+    description: Endpoints administrés (RBAC §55) — requièrent la permission `administer`.
 components:
   securitySchemes:
     bearerAuth:
@@ -1394,8 +1396,12 @@ paths:
       description: |
         À partir d'un point WGS84 (EPSG:4326), renvoie la hiérarchie territoriale
         complète (pays → région → département → arrondissement → commune → …)
-        via `ST_Within`. Un point hors du Sénégal renvoie une hiérarchie vide.
-        Les coordonnées acceptées sont `lng` (alias `lon`) et `lat` (CDC §44).
+        via `ST_Within`. Un point **hors emprise** (ou dans l'océan) renvoie un
+        `404` explicite — jamais une commune arbitraire. Chaque résultat porte un
+        **indicateur de confiance** (`high`/`medium`/`low`) dérivé de la distance
+        à la frontière du territoire le plus fin : un point proche d'une limite
+        est intrinsèquement ambigu. Coordonnées : `lng` (alias `lon`) et `lat`
+        (CDC §44).
       operationId: reverseGeocode
       security: []
       parameters:
@@ -1409,7 +1415,7 @@ paths:
             application/json:
               schema:
                 type: object
-                required: [success, query, hierarchy]
+                required: [success, query, confidence, hierarchy]
                 properties:
                   success:
                     type: boolean
@@ -1421,8 +1427,44 @@ paths:
                         type: number
                       latitude:
                         type: number
+                  confidence:
+                    type: [string, "null"]
+                    enum: [high, medium, low]
+                    description: |
+                      Indicateur de confiance (tolérance de frontière) :
+                      `high` ≥ 1000 m d'une frontière, `medium` 100–1000 m,
+                      `low` < 100 m (point proche d'une limite).
+                  boundary_distance_m:
+                    type: [number, "null"]
+                    description: Distance (mètres) du point à la frontière du territoire le plus fin contenant.
+                    example: 26919
                   hierarchy:
                     $ref: '#/components/schemas/ReverseGeocodeHierarchy'
+              example:
+                success: true
+                query:
+                  longitude: -16.25
+                  latitude: 14.75
+                confidence: high
+                boundary_distance_m: 26919
+                hierarchy:
+                  country: { code: SN, name: Sénégal }
+                  region: { code: SN-TH, name: Thiès }
+                  department: { code: SN-TH-MB, name: Mbour }
+                  commune: { code: SN-TH-MB-MBR, name: Mbour }
+        '404':
+          description: |
+            Aucun territoire ne couvre le point (hors emprise ou dans l'océan).
+            Enveloppe d'erreur §50 avec le code `REVERSE_GEOCODE_OUTSIDE_TERRITORY`.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+              example:
+                error:
+                  code: REVERSE_GEOCODE_OUTSIDE_TERRITORY
+                  message: "Aucun territoire ne couvre le point (-25, 10)."
+                  request_id: 6f1d4a2e-9a44-4f1f-9f70-2c2b6a1b7f10
         '422':
           $ref: '#/components/responses/UnprocessableEntity'
         '429':
@@ -1635,6 +1677,55 @@ paths:
                     $ref: '#/components/schemas/Dataset'
         '404':
           $ref: '#/components/responses/NotFound'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+
+
+  /api/v1/admin/audit/summary:
+    get:
+      tags: [Administration]
+      summary: Synthèse d'audit (RBAC §55)
+      description: |
+        Exemple de ressource administrée. Exige une clé API **active** portant la
+        permission `administer`. Une clé publique/développeur reçoit **403**
+        (INSUFFICIENT_PERMISSIONS) ; l'absence de clé reçoit **401**
+        (API_KEY_MISSING) — jamais un accès partiel (CDC §55).
+      operationId: getAdminAuditSummary
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Synthèse d'audit autorisée.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [success, data]
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  data:
+                    type: object
+                    properties:
+                      audit_events_total:
+                        type: integer
+                      granted_by_permission:
+                        type: string
+                        example: administer
+        '403':
+          description: Clé active mais dépourvue de la permission `administer`.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+              example:
+                error:
+                  code: INSUFFICIENT_PERMISSIONS
+                  message: "Permission « administer » manquante pour cette ressource."
+                  request_id: 6f1d4a2e-9a44-4f1f-9f70-2c2b6a1b7f10
+        '401':
+          $ref: '#/components/responses/Unauthorized'
         '429':
           $ref: '#/components/responses/TooManyRequests'
 

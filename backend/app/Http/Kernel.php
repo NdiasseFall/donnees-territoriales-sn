@@ -4,7 +4,9 @@ declare(strict_types=1);
 
 namespace App\Http;
 
+use App\Http\Middleware\AuthenticateApiKey;
 use App\Http\Middleware\EnsureApiKeyIsActive;
+use App\Http\Middleware\EnsureApiKeyPermission;
 use App\Http\Middleware\LogApiKeyUsage;
 use App\Http\Middleware\RateLimitByApiKeyTier;
 use App\Http\Middleware\RedirectIfAuthenticated;
@@ -69,7 +71,9 @@ class Kernel extends HttpKernel
         'verified' => EnsureEmailIsVerified::class,
 
         // Middleware API custom
+        'api.key' => AuthenticateApiKey::class,
         'api.key.active' => EnsureApiKeyIsActive::class,
+        'api.key.permission' => EnsureApiKeyPermission::class,
         'api.key.rate-limit' => RateLimitByApiKeyTier::class,
         'api.key.log' => LogApiKeyUsage::class,
     ];
@@ -81,8 +85,10 @@ class Kernel extends HttpKernel
         ShareErrorsFromSession::class,
         SubstituteBindings::class,
         Authenticate::class,
+        AuthenticateApiKey::class,
         ThrottleRequests::class,
         EnsureApiKeyIsActive::class,
+        EnsureApiKeyPermission::class,
         RateLimitByApiKeyTier::class,
     ];
 }
