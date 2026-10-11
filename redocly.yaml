@@ -1,0 +1,18 @@
+# Configuration Redocly CLI — contrat OpenAPI de l'API v1.
+#
+# Utilisée par le job CI « lint » et en local :
+#   npx --yes @redocly/cli@1.25.11 lint backend/storage/api/openapi.yaml
+#
+# Toute erreur de schéma échoue la CI ; seules les règles explicitement
+# assouplies ci-dessous sont neutralisées, avec justification.
+extends:
+  - recommended
+rules:
+  # Les chemins /api/v1/territories/code/{code} et
+  # /api/v1/territories/{code}/<suffixe> sont ambigus pour un routeur
+  # générique, mais désambiguïsés côté Laravel par l'ordre de déclaration
+  # dans routes/api.php : la route littérale /code/{code} est enregistrée
+  # AVANT les routes dynamiques /{code}/... Aucune requête réelle n'est
+  # donc mal routée, et le test OpenApiDocumentationTest verrouille cette
+  # correspondance. La règle est donc volontairement désactivée.
+  no-ambiguous-paths: off

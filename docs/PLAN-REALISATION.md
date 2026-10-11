@@ -92,8 +92,8 @@
 
 1. **US-012** ✅ **Livré** — Endpoints : `code/{code}`, `/{id}/children`, `/{id}/parents`, `/{id}/geometry` (GeoJSON `application/geo+json`, RFC 7946), `/{id}/map`, filtres `type/level/parent/status/search/page` + `bbox` en **requête préparée** (`ST_Intersects`), erreurs enveloppe §50 (`TERRITORY_NOT_FOUND`, `INVALID_BBOX` — 422). Fix associé : `findAncestors` résout l'id avant `core.fn_get_territory_ancestors` (cast BIGINT). Tests : `TerritoryHierarchyApiTest` (fixtures PostGIS en transaction).
 2. **US-013** — OpenAPI 3.1 : 100 % des routes v1, schéma d'erreur §50 cohérent, `/api/docs` public, headers `X-RateLimit-*` documentés.
-3. **US-014** — Reverse-geocode : hiérarchie complète `country → … → locality`, `404` hors emprise, indicateur de confiance.
-4. **US-022** — Sécurité : `key_hash` uniquement (§52), 429 + `Retry-After`, SQL préparé partout, matrice RBAC §55, health DB → **503** (critère US-003).
+3. **US-014** ✅ **Livré** — Reverse-geocode : hiérarchie complète `country → … → locality`, **404 explicite** hors emprise (`REVERSE_GEOCODE_OUTSIDE_TERRITORY`, enveloppe §50 — jamais de commune arbitraire), et **indicateur de confiance** `high`/`medium`/`low` + `boundary_distance_m` dérivés de la distance à la frontière du territoire le plus fin (calcul PostGIS `ST_Distance`/`ST_Boundary` dans `fn_reverse_geocode`). Tests : `ReverseGeocodeApiTest` (fixtures PostGIS, 3 cas). Contrat OpenAPI mis à jour (champs + 404).
+4. **US-022** ✅ **Livré** — Sécurité : `key_hash` seul persisté (§52, schéma `auth.api_keys` créé), résolution Bearer→ApiKey (`AuthenticateApiKey`), **RBAC §55** (`EnsureApiKeyPermission`, route `/admin/audit/summary` → 401/403/200), 429 + `Retry-After`/`X-RateLimit-*` propagés dans l'enveloppe §50 (fix `Handler` + `RateLimitByApiKeyTier`), SQL préparé (search/bbox), **health DB down → 503** (critère US-003). Tests : `SecurityControlsApiTest` (7 cas). Contrat OpenAPI + `init_all.sql`/CI mis à jour.
 5. Tests feature associés verts en CI.
 
 **DoD** : tests contractuels au vert ; OpenAPI validé par linter (`@redocly/cli`).

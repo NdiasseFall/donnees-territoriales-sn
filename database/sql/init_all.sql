@@ -7,6 +7,9 @@
 \echo '--> [1/6] Initialisation des extensions et des 5 schémas PostGIS...'
 \i 00_init_extensions_schemas.sql
 
+\echo '--> [1b/6] Création du schéma auth (identités et clés API hachées)...'
+\i 00b_create_auth_schema.sql
+
 \echo '--> [2/6] Création du schéma audit...'
 \i 01_create_audit_schema.sql
 
@@ -22,5 +25,8 @@
 \echo '--> [6/6] Création du schéma published et fonctions spatiales avancées...'
 \i 05_create_published_schema.sql
 \i 06_spatial_helper_functions.sql
+
+\echo '--> [7/7] Alignement DDL catalogue datasets (Phase 4 US-015/US-018)...'
+\i 08_align_dataset_catalog_ddl.sql
 
 \echo '--> Initialisation PostGIS terminée avec succès !'

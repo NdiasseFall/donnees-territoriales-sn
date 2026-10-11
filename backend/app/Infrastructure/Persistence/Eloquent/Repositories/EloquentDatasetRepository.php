@@ -44,6 +44,9 @@ class EloquentDatasetRepository implements DatasetRepositoryInterface
     public function findAll(
         ?string $category = null,
         ?AccessLevel $accessLevel = null,
+        string $search = '',
+        string $order = 'name',
+        string $direction = 'asc',
         int $limit = 50,
         int $offset = 0
     ): array {
@@ -58,8 +61,45 @@ class EloquentDatasetRepository implements DatasetRepositoryInterface
             $query->where('d.access_level', $accessLevel->value);
         }
 
-        $rows = $query->select(['d.*', 's.name as source_name'])
-            ->orderBy('d.name', 'asc')
+        if ($search !== '') {
+            // Même régularisation que la recherche territoire (CDC §85) : apostrophes
+            // supprimées, comparaison insensible à la casse, plein-texte + trigrammes.
+            $normalized = str_replace("'", '', $search);
+            $query->where(function ($q) use ($normalized) {
+                $q->whereRaw(
+                    "REPLACE(d.name, '''', '') ILIKE ?",
+                    ["%{$normalized}%"]
+                )->orWhereRaw(
+                    "REPLACE(COALESCE(d.description, ''), '''', '') ILIKE ?",
+                    ["%{$normalized}%"]
+                )->orWhereRaw(
+                    "REPLACE(COALESCE(d.category, ''), '''', '') ILIKE ?",
+                    ["%{$normalized}%"]
+                )->orWhereRaw(
+                    "REPLACE(COALESCE(s.name, ''), '''', '') ILIKE ?",
+                    ["%{$normalized}%"]
+                )->orWhereRaw(
+                    "to_tsvector('french', public.immutable_unaccent(REPLACE(d.name, '''', ''))) @@ plainto_tsquery('french', public.immutable_unaccent(?))",
+                    [$normalized]
+                );
+            });
+        }
+
+        switch ($order) {
+            case 'updated_at':
+                $query->orderBy('d.updated_at', $direction);
+                break;
+            case 'created_at':
+                $query->orderBy('d.created_at', $direction);
+                break;
+            case 'name':
+            default:
+                $query->orderBy('d.name', $direction);
+                break;
+        }
+
+        $rows = $query
+            ->select(['d.*', 's.name as source_name'])
             ->limit($limit)
             ->offset($offset)
             ->get();
@@ -67,6 +107,82 @@ class EloquentDatasetRepository implements DatasetRepositoryInterface
         return $rows->map(fn ($r) => $this->hydrateDataset($r))->all();
     }
 
+    /**
+     * Recherche du catalogue (nom, description, catégorie, producteur), insensible
+     * à la casse et aux apostrophes, avec trigrammes et plein-texte français.
+     *
+     * @return Dataset[]
+     */
+    public function search(string $query, int $limit = 20): array
+    {
+        $normalized = str_replace("'", '', $query);
+
+        return DB::table('core.datasets as d')
+            ->leftJoin('core.sources as s', 'd.source_id', '=', 's.id')
+            ->where(function ($q) use ($normalized) {
+                $q->whereRaw(
+                    "REPLACE(d.name, '''', '') ILIKE ?",
+                    ["%{$normalized}%"]
+                )->orWhereRaw(
+                    "REPLACE(COALESCE(d.description, ''), '''', '') ILIKE ?",
+                    ["%{$normalized}%"]
+                )->orWhereRaw(
+                    "REPLACE(COALESCE(d.category, ''), '''', '') ILIKE ?",
+                    ["%{$normalized}%"]
+                )->orWhereRaw(
+                    "REPLACE(COALESCE(s.name, ''), '''', '') ILIKE ?",
+                    ["%{$normalized}%"]
+                )->orWhereRaw(
+                    "to_tsvector('french', public.immutable_unaccent(REPLACE(d.name, '''', ''))) @@ plainto_tsquery('french', public.immutable_unaccent(?))",
+                    [$normalized]
+                );
+            })
+            ->select(['d.*', 's.name as source_name'])
+            ->limit($limit)
+            ->orderByRaw('similarity(d.name, ?)', [$normalized])
+            ->get()
+            ->map(fn ($r) => $this->hydrateDataset($r))
+            ->all();
+    }
+
+    /**
+     * Compteur aligné sur findByCriteria (pagination — §60).
+     */
+    public function countByCriteria(
+        ?string $category = null,
+        ?AccessLevel $accessLevel = null,
+        string $search = ''
+    ): int {
+        $query = DB::table('core.datasets as d')
+            ->leftJoin('core.sources as s', 'd.source_id', '=', 's.id');
+
+        if ($category !== null) {
+            $query->where('d.category', $category);
+        }
+
+        if ($accessLevel !== null) {
+            $query->where('d.access_level', $accessLevel->value);
+        }
+
+        if ($search !== '') {
+            $normalized = str_replace("'", '', $search);
+            $query->where(function ($q) use ($normalized) {
+                $q->whereRaw(
+                    "REPLACE(d.name, '''', '') ILIKE ?",
+                    ["%{$normalized}%"]
+                )->orWhereRaw(
+                    "to_tsvector('french', public.immutable_unaccent(REPLACE(d.name, '''', ''))) @@ plainto_tsquery('french', public.immutable_unaccent(?))",
+                    [$normalized]
+                );
+            });
+        }
+
+        return $query->count('d.id');
+    }
+
+    /**
+     * Dernière version publiée d'un jeu de données.
+     */
     public function findLatestPublishedVersion(int $datasetId): ?DatasetVersion
     {
         $row = DB::table('core.dataset_versions')

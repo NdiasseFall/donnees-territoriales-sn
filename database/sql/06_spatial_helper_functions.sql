@@ -130,11 +130,40 @@ RETURNS JSONB AS $$
 DECLARE
     v_point GEOMETRY;
     v_result JSONB;
+    v_boundary_distance_m DOUBLE PRECISION;
 BEGIN
     v_point := ST_SetSRID(ST_MakePoint(p_longitude, p_latitude), 4326);
 
+    -- US-014 — Indicateur de confiance (CDC §44) :
+    -- un point proche d'une frontière est intrinsèquement ambigu. On mesure la
+    -- distance (en mètres, sur la sphère) entre le point et la LIMITE du
+    -- territoire le plus fin (niveau maximal) qui le contient réellement.
+    -- v_boundary_distance_m = NULL ⟺ aucun polygone ne contient le point
+    -- (hors emprise ou dans l'océan) → l'API renverra alors un 404 explicite.
+    SELECT ROUND(
+        MIN(ST_Distance(v_point::geography, ST_Boundary(t.geometry)::geography))
+    )::DOUBLE PRECISION
+    INTO v_boundary_distance_m
+    FROM published.territories t
+    WHERE ST_Contains(t.geometry, v_point)
+      AND GeometryType(t.geometry) IN ('POLYGON', 'MULTIPOLYGON')
+      AND t.level = (
+          SELECT MAX(t2.level) FROM published.territories t2
+          WHERE ST_Contains(t2.geometry, v_point)
+            AND GeometryType(t2.geometry) IN ('POLYGON', 'MULTIPOLYGON')
+      );
+
     SELECT jsonb_build_object(
         'point', jsonb_build_object('longitude', p_longitude, 'latitude', p_latitude),
+        'confidence', CASE
+            WHEN v_boundary_distance_m IS NULL THEN NULL
+            -- Tolérance gérée : >= 1000 m d'une frontière = très fiable ;
+            -- 100–1000 m = fiable ; < 100 m = faible (proche d'une frontière).
+            WHEN v_boundary_distance_m >= 1000 THEN 'high'
+            WHEN v_boundary_distance_m >= 100 THEN 'medium'
+            ELSE 'low'
+        END,
+        'boundary_distance_m', v_boundary_distance_m,
         'hierarchy', COALESCE(jsonb_object_agg(
             LOWER(t.type_code),
             jsonb_build_object(

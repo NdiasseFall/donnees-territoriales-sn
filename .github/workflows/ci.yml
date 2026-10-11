@@ -69,13 +69,15 @@ jobs:
       - name: Initialisation du schéma PostGIS
         run: |
           for file in database/sql/00_init_extensions_schemas.sql \
+                      database/sql/00b_create_auth_schema.sql \
                       database/sql/01_create_audit_schema.sql \
                       database/sql/02_create_core_schema.sql \
                       database/sql/03_create_raw_schema.sql \
                       database/sql/04_create_staging_schema.sql \
                       database/sql/05_create_published_schema.sql \
                       database/sql/06_spatial_helper_functions.sql \
-                      database/sql/07_purge_legacy_accented_codes.sql; do
+                      database/sql/07_purge_legacy_accented_codes.sql \
+                      database/sql/08_align_dataset_catalog_ddl.sql; do
             echo "--> Applying $file"
             psql -h localhost -U territorial -d territorial_test -v ON_ERROR_STOP=1 -f "$file"
           done
@@ -108,6 +110,10 @@ jobs:
       - name: Style de code (Pint)
         working-directory: backend
         run: vendor/bin/pint --test
+      # Contrat OpenAPI 3.1 : redocly échoue sur toute erreur de schéma.
+      # L'ambiguïté de chemins est neutralisée via redocly.yaml (ordre Laravel).
+      - name: Contrat OpenAPI (redocly)
+        run: npx --yes @redocly/cli@1.25.11 lint backend/storage/api/openapi.yaml
 
   frontend:
     name: Frontend (typecheck + build)

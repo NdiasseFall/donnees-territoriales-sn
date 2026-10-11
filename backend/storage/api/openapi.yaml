@@ -1,0 +1,1804 @@
+# =============================================================================
+# Spécification OpenAPI 3.1 — Plateforme Nationale de Données Territoriales
+# du Sénégal (US-013, CDC §61 et §100.9).
+#
+# Source de vérité du contrat API v1 :
+#   - UI interactive : GET /api/docs (Redoc) ;
+#   - contrat brut    : GET /api/docs/openapi.yaml (ce fichier).
+# Le test contractuel `OpenApiDocumentationTest` exige que chaque route
+# Laravel du groupe /api figure ici (et inversement). Validation en CI :
+#   npx @redocly/cli lint backend/storage/api/openapi.yaml
+# =============================================================================
+openapi: 3.1.0
+info:
+  title: API — Plateforme Nationale de Données Territoriales du Sénégal
+  version: 1.0.0
+  description: |
+    API en lecture des découpages administratifs du Sénégal (pays, régions,
+    départements, arrondissements, communes, localités), alimentée par
+    PostgreSQL/PostGIS (SRID **EPSG:4326**).
+
+    ## Formats de réponse
+
+    - `application/json` : format standard, enveloppe `{ "success": true, ... }`.
+    - `application/geo+json` : géométries conformes **RFC 7946**, obtenues avec
+      le paramètre `format=geojson` ou via l'endpoint `geometry`.
+
+    ## Enveloppe d'erreur (CDC §50)
+
+    Toute erreur JSON suit la structure unique :
+
+    ```json
+    {
+      "error": {
+        "code": "TERRITORY_NOT_FOUND",
+        "message": "Territoire avec le code 'SN-TH' introuvable.",
+        "request_id": "6f1d4a2e-9a44-4f1f-9f70-2c2b6a1b7f10"
+      }
+    }
+    ```
+
+    ## Limites de débit (CDC §53)
+
+    Chaque réponse publie `X-RateLimit-Limit`, `X-RateLimit-Remaining` et
+    `X-RateLimit-Reset`. Au-delà de la limite : **HTTP 429** avec `Retry-After`.
+
+    - routes publiques : 30 requêtes/min/IP ;
+    - routes `/api/v1/auth/*` : selon le tier de la clé (60 à 600/min).
+  contact:
+    name: Équipe Plateforme Territoriale
+    url: https://github.com/NdiasseFall/donnees-territoriales-sn
+  license:
+    name: MIT
+    identifier: MIT
+servers:
+  - url: https://api.donnees-territoriales.sn
+    description: Serveur de production régional (reverse-proxy public)
+  - url: http://127.0.0.1:8000
+    description: Serveur local de développement (backend Docker)
+tags:
+  - name: Documentation
+    description: Contrat OpenAPI et page de documentation interactive (US-013).
+  - name: Santé
+    description: Healthcheck applicatif et état de la base PostGIS.
+  - name: Territoires
+    description: Consultation, hiérarchie et géométries des territoires (US-012).
+  - name: Spatial
+    description: Opérations géospatiales PostGIS (géocodage inverse, BBOX, intersections).
+  - name: Recherche
+    description: Recherche textuelle (plein texte + trigrammes).
+  - name: Catalogue
+    description: Catalogue des jeux de données publiés.
+  - name: Authentification
+    description: Gestion des clés API (Sanctum).
+  - name: Administration
+    description: Endpoints administrés (RBAC §55) — requièrent la permission `administer`.
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: Sanctum
+      description: |
+        Token personnel Laravel Sanctum transmis dans l'en-tête
+        `Authorization: Bearer <token>`. Requis uniquement pour
+        `/api/v1/auth/*` ; les autres routes sont publiques.
+  headers:
+    XRateLimitLimit:
+      description: Plafond de requêtes autorisées par fenêtre glissante.
+      schema:
+        type: integer
+        examples: [30]
+    XRateLimitRemaining:
+      description: Requêtes restantes dans la fenêtre glissante courante.
+      schema:
+        type: integer
+        examples: [29]
+    XRateLimitReset:
+      description: Secondes restantes avant réinitialisation du compteur.
+      schema:
+        type: integer
+        examples: [42]
+    RetryAfter:
+      description: Délai en secondes à respecter avant une nouvelle tentative (HTTP 429).
+      schema:
+        type: integer
+        examples: [60]
+  parameters:
+    TerritoryCode:
+      name: code
+      in: path
+      required: true
+      description: |
+        Code territorial officiel : `SN` (pays), `SN-TH` (région de Thiès),
+        `SN-TH-MB` (département de Mbour), etc.
+      schema:
+        type: string
+        maxLength: 50
+      example: SN-TH
+    LevelQuery:
+      name: level
+      in: query
+      required: false
+      description: |
+        Niveau hiérarchique : 0 pays, 1 région, 2 département,
+        3 arrondissement, 4 commune, 5 quartier/village, 6 hameau.
+      schema:
+        type: integer
+        minimum: 0
+        maximum: 6
+      example: 1
+    TypeQuery:
+      name: type
+      in: query
+      required: false
+      description: Filtre sur le type de territoire (ex. `commune`, `département`).
+      schema:
+        type: string
+        maxLength: 50
+      example: commune
+    ParentQuery:
+      name: parent
+      in: query
+      required: false
+      description: Code du parent direct (rattachement hiérarchique).
+      schema:
+        type: string
+        maxLength: 50
+      example: SN-TH
+    ParentCodeQuery:
+      name: parent_code
+      in: query
+      required: false
+      description: Code du parent direct (alias de `parent`).
+      schema:
+        type: string
+        maxLength: 50
+      example: SN-TH
+    StatusQuery:
+      name: status
+      in: query
+      required: false
+      description: Statut de publication du territoire.
+      schema:
+        type: string
+        enum:
+          - ACTIVE
+          - INACTIVE
+          - PENDING
+          - DISPUTED
+          - HISTORICAL
+      example: ACTIVE
+    SearchQuery:
+      name: search
+      in: query
+      required: false
+      description: Filtre textuel sur le nom du territoire (accents insensibles).
+      schema:
+        type: string
+        maxLength: 100
+      example: Mbour
+
+    DatasetSearchQuery:
+      name: q
+      in: query
+      required: false
+      description: |
+        Terme de recherche du catalogue de jeux de données (plein texte + trigrammes,
+        insensible à la casse et aux apostrophes, CDC §85). Deux caractères minimum.
+        L'alias `search` est accepté comme synonyme.
+      schema:
+        type: string
+        minLength: 2
+        maxLength: 100
+      example: cadastre
+
+    DatasetSearchAliasQuery:
+      name: search
+      in: query
+      required: false
+      description: Alias de `q` (rétrocompatibilité).
+      schema:
+        type: string
+        minLength: 2
+        maxLength: 100
+      example: cadastre
+
+    DatasetOrderQuery:
+      name: order
+      in: query
+      required: false
+      description: |
+        Champ sur lequel trier (name, updated_at, created_at).
+      schema:
+        type: string
+        enum: [name, updated_at, created_at]
+      example: name
+
+    DatasetDirectionQuery:
+      name: direction
+      in: query
+      required: false
+      description: |
+        Sens du tri (asc ou desc).
+      schema:
+        type: string
+        enum: [asc, desc]
+      example: desc
+
+    PageQuery:
+      name: page
+      in: query
+      required: false
+      description: Numéro de page (pagination ; incompatible avec `offset`).
+      schema:
+        type: integer
+        minimum: 1
+      example: 1
+    PerPageQuery:
+      name: per_page
+      in: query
+      required: false
+      description: Éléments par page (1 à 500).
+      schema:
+        type: integer
+        minimum: 1
+        maximum: 500
+      example: 50
+    BboxQuery:
+      name: bbox
+      in: query
+      required: false
+      description: |
+        Emprise géographique `min_lon,min_lat,max_lon,max_lat` en WGS84
+        (EPSG:4326), transmise à `ST_Intersects` via requête préparée (US-012).
+        Bornes inversées ou hors WGS84 → HTTP 422, jamais un 500.
+      schema:
+        type: string
+        pattern: '^-?\d+(\.\d+)?,-?\d+(\.\d+)?,-?\d+(\.\d+)?,-?\d+(\.\d+)?$'
+      example: -17.6,14.6,-17.0,15.0
+    BboxRequiredQuery:
+      name: bbox
+      in: query
+      required: true
+      description: |
+        Emprise géographique obligatoire `min_lon,min_lat,max_lon,max_lat` en WGS84
+        (EPSG:4326), transmise à `ST_Intersects` via requête préparée.
+      schema:
+        type: string
+        pattern: '^-?\d+(\.\d+)?,-?\d+(\.\d+)?,-?\d+(\.\d+)?,-?\d+(\.\d+)?$'
+      example: -17.6,14.6,-17.0,15.0
+    LongitudeQuery:
+      name: lng
+      in: query
+      required: true
+      description: |
+        Longitude WGS84 (EPSG:4326) du point à géocoder. L'alias `lon` reste
+        accepté pour la rétrocompatibilité (CDC §44).
+      schema:
+        type: number
+        minimum: -180
+        maximum: 180
+      example: -17.4677
+    LatitudeQuery:
+      name: lat
+      in: query
+      required: true
+      description: Latitude WGS84 (EPSG:4326) du point à géocoder.
+      schema:
+        type: number
+        minimum: -90
+        maximum: 90
+      example: 14.7167
+    SearchTermQuery:
+      name: q
+      in: query
+      required: true
+      description: |
+        Terme de recherche textuel (plein texte + trigrammes, insensible à la
+        casse et aux accents). Deux caractères minimum (CDC §85).
+      schema:
+        type: string
+        minLength: 2
+        maxLength: 100
+      example: Mbour
+    LimitQuery:
+      name: limit
+      in: query
+      required: false
+      description: Nombre maximum d'éléments retournés (plafond selon l'endpoint).
+      schema:
+        type: integer
+        minimum: 1
+      example: 50
+    OffsetQuery:
+      name: offset
+      in: query
+      required: false
+      description: Décalage de pagination (utilisé si `page` est absent).
+      schema:
+        type: integer
+        minimum: 0
+      example: 0
+    FormatQuery:
+      name: format
+      in: query
+      required: false
+      description: |
+        Format de sortie. `json` (défaut) : enveloppe `{ "success": true, ... }`.
+        `geojson` : géométries conformes RFC 7946.
+      schema:
+        type: string
+        enum: [json, geojson]
+      example: json
+    SimplifiedQuery:
+      name: simplified
+      in: query
+      required: false
+      description: Active la simplification de géométrie (`ST_Simplify`) pour alléger la charge réseau.
+      schema:
+        type: boolean
+      example: false
+    ToleranceQuery:
+      name: tolerance
+      in: query
+      required: false
+      description: Tolérance de simplification géométrique en degrés (0.00001 à 0.1).
+      schema:
+        type: number
+        minimum: 0.00001
+        maximum: 0.1
+      example: 0.001
+    CategoryQuery:
+      name: category
+      in: query
+      required: false
+      description: Filtre les jeux de données du catalogue sur leur catégorie.
+      schema:
+        type: string
+        maxLength: 100
+      example: demographie
+    AccessLevelQuery:
+      name: access_level
+      in: query
+      required: false
+      description: Filtre les jeux de données sur leur niveau d'accès.
+      schema:
+        type: string
+        enum: [PUBLIC, REGISTERED, RESTRICTED, INTERNAL, CONFIDENTIAL]
+      example: PUBLIC
+    SlugPath:
+      name: slug
+      in: path
+      required: true
+      description: Identifiant textuel du jeu de données dans le catalogue.
+      schema:
+        type: string
+        maxLength: 150
+      example: limites-administratives-senegal
+    UuidPath:
+      name: uuid
+      in: path
+      required: true
+      description: Identifiant UUID (v4) de la clé API.
+      schema:
+        type: string
+        format: uuid
+      example: 9b1d4a2e-9a44-4f1f-9f70-2c2b6a1b7f10
+  responses:
+    BadRequest:
+      description: Requête invalide (paramètre malformé ou bornes incohérentes).
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorEnvelope'
+          example:
+            error:
+              code: INVALID_BBOX
+              message: Bornes de la BBOX inversées ou hors WGS84.
+              request_id: 6f1d4a2e-9a44-4f1f-9f70-2c2b6a1b7f10
+    Unauthorized:
+      description: |
+        Authentification absente ou invalide. Requise sur `/api/v1/auth/*`
+        (token Sanctum + clé API active).
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorEnvelope'
+          example:
+            error:
+              code: UNAUTHENTICATED
+              message: Non authentifié.
+              request_id: 6f1d4a2e-9a44-4f1f-9f70-2c2b6a1b7f10
+    NotFound:
+      description: |
+        Ressource introuvable (code territorial, slug de jeu de données ou
+        clé API inexistante).
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorEnvelope'
+          example:
+            error:
+              code: TERRITORY_NOT_FOUND
+              message: "Territoire avec le code 'SN-TH' introuvable."
+              request_id: 6f1d4a2e-9a44-4f1f-9f70-2c2b6a1b7f10
+    UnprocessableEntity:
+      description: |
+        Échec de validation des paramètres (champ requis manquant, hors bornes,
+        longueur insuffisante…).
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ValidationErrorEnvelope'
+          example:
+            error:
+              code: VALIDATION_FAILED
+              message: La requête contient des champs invalides.
+              request_id: 6f1d4a2e-9a44-4f1f-9f70-2c2b6a1b7f10
+              errors:
+                q: ["Le champ q est obligatoire."]
+    TooManyRequests:
+      description: |
+        Limite de débit dépassée (CDC §53). Respecter l'en-tête `Retry-After`.
+      headers:
+        Retry-After:
+          $ref: '#/components/headers/RetryAfter'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorEnvelope'
+          example:
+            error:
+              code: "429"
+              message: Trop de requêtes. Veuillez ralentir.
+              request_id: 6f1d4a2e-9a44-4f1f-9f70-2c2b6a1b7f10
+    InternalServerError:
+      description: |
+        Erreur interne inattendue du serveur (ex. contrat OpenAPI ou vue de
+        documentation indisponible). Le `request_id` permet la corrélation.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorEnvelope'
+          example:
+            error:
+              code: INTERNAL_ERROR
+              message: Une erreur interne est survenue.
+              request_id: 6f1d4a2e-9a44-4f1f-9f70-2c2b6a1b7f10
+  schemas:
+    # --- Enveloppes d'erreur (CDC §50) -------------------------------------
+    ErrorObject:
+      type: object
+      description: Détail normalisé d'une erreur API.
+      required: [code, message, request_id]
+      properties:
+        code:
+          type: string
+          description: Code d'erreur stable (ex. TERRITORY_NOT_FOUND, VALIDATION_FAILED).
+        message:
+          type: string
+          description: Message lisible destiné au développeur.
+        request_id:
+          type: string
+          description: Identifiant de corrélation pour le support.
+    ErrorEnvelope:
+      type: object
+      description: Enveloppe d'erreur unique renvoyée par toutes les routes JSON.
+      required: [error]
+      properties:
+        error:
+          $ref: '#/components/schemas/ErrorObject'
+    ValidationErrorObject:
+      type: object
+      description: Erreur de validation enrichie du détail par champ (HTTP 422).
+      required: [code, message, request_id, errors]
+      properties:
+        code:
+          type: string
+          example: VALIDATION_FAILED
+        message:
+          type: string
+          description: Message lisible destiné au développeur.
+        request_id:
+          type: string
+          description: Identifiant de corrélation pour le support.
+        errors:
+          type: object
+          description: Détail par champ des erreurs de validation.
+          additionalProperties:
+            type: array
+            items:
+              type: string
+    ValidationErrorEnvelope:
+      type: object
+      description: Enveloppe d'erreur de validation (HTTP 422).
+      required: [error]
+      properties:
+        error:
+          $ref: '#/components/schemas/ValidationErrorObject'
+
+    # --- Territoires (US-012) ----------------------------------------------
+    HierarchyLevel:
+      type: integer
+      description: |
+        Niveau hiérarchique : 0 pays, 1 région, 2 département, 3 arrondissement,
+        4 commune, 5 quartier/village, 6 hameau.
+      minimum: 0
+      maximum: 6
+      example: 1
+    TerritoryHierarchy:
+      type: object
+      description: Rattachement hiérarchique du territoire.
+      properties:
+        level:
+          $ref: '#/components/schemas/HierarchyLevel'
+        label:
+          type: string
+          description: Libellé lisible du niveau (ex. "Région").
+          example: Région
+        parent_code:
+          type: [string, "null"]
+          description: Code du parent direct.
+          example: SN
+    TerritorySpatial:
+      type: object
+      description: Attributs géospatiaux calculés (SRID EPSG:4326).
+      properties:
+        centroid:
+          type: [object, "null"]
+          description: Centroïde au format GeoJSON Point (RFC 7946).
+          additionalProperties: true
+        bounding_box:
+          type: [array, "null"]
+          description: Emprise `[min_lon, min_lat, max_lon, max_lat]`.
+          items:
+            type: number
+          example: [-17.1, 14.6, -16.8, 14.9]
+        area_km2:
+          type: [number, "null"]
+          description: Superficie en kilomètres carrés.
+        area_formatted:
+          type: [string, "null"]
+          description: Superficie formatée pour l'affichage.
+    TerritoryDemographics:
+      type: object
+      description: Données démographiques optionnelles.
+      properties:
+        population:
+          type: [integer, "null"]
+        population_year:
+          type: [integer, "null"]
+        capital:
+          type: [string, "null"]
+    Territory:
+      type: object
+      description: Représentation JSON standard d'un territoire administratif.
+      properties:
+        uuid:
+          type: string
+          format: uuid
+        code:
+          type: string
+          description: Code territorial officiel.
+          example: SN-TH
+        name:
+          type: string
+          example: Thiès
+        ansd_code:
+          type: [string, "null"]
+          description: Code de l'ANSD (Agence Nationale de la Statistique et de la Démographie).
+        hierarchy:
+          $ref: '#/components/schemas/TerritoryHierarchy'
+        spatial:
+          $ref: '#/components/schemas/TerritorySpatial'
+        demographics:
+          $ref: '#/components/schemas/TerritoryDemographics'
+        status:
+          type: string
+          enum: [ACTIVE, INACTIVE, PENDING, DISPUTED, HISTORICAL]
+        quality_status:
+          type: string
+          description: Statut de qualité de la donnée (ex. VALID, OFFICIAL).
+        metadata:
+          type: [object, "null"]
+          additionalProperties: true
+        geometry:
+          type: [object, "null"]
+          description: Géométrie GeoJSON (présente uniquement si demandée).
+          additionalProperties: true
+    HierarchyNode:
+      type: object
+      description: Nœud de l'arbre hiérarchique (parents + enfants directs).
+      properties:
+        territory:
+          $ref: '#/components/schemas/Territory'
+        ancestors:
+          type: array
+          description: Chaîne des ancêtres, du pays vers le parent direct.
+          items:
+            $ref: '#/components/schemas/Territory'
+        children:
+          type: array
+          description: Enfants directs du territoire.
+          items:
+            $ref: '#/components/schemas/Territory'
+    TerritoryMap:
+      type: object
+      description: Payload cartographique complet d'un territoire (CDC §41).
+      properties:
+        geometry:
+          type: [object, "null"]
+          description: Géométrie GeoJSON (RFC 7946).
+          additionalProperties: true
+        bbox:
+          type: [array, "null"]
+          items:
+            type: number
+        centroid:
+          type: [object, "null"]
+          additionalProperties: true
+        properties:
+          type: object
+          description: Propriétés attributaires du territoire pour l'affichage cartographique.
+          additionalProperties: true
+        children:
+          type: array
+          items:
+            $ref: '#/components/schemas/Territory'
+    PaginationMeta:
+      type: object
+      description: Métadonnées de pagination.
+      properties:
+        total:
+          type: integer
+          description: Nombre total d'éléments correspondant aux filtres.
+        limit:
+          type: integer
+          description: Taille de page appliquée.
+        offset:
+          type: integer
+        page:
+          type: [integer, "null"]
+          description: Numéro de page courant (null si pagination par offset).
+    # --- GeoJSON (RFC 7946) ------------------------------------------------
+    GeoJsonGeometry:
+      type: object
+      description: Géométrie GeoJSON valide (Point, MultiPolygon…).
+      required: [type]
+      properties:
+        type:
+          type: string
+        coordinates:
+          type: [array, "null"]
+      additionalProperties: true
+    GeoJsonFeature:
+      type: object
+      description: Entité GeoJSON (RFC 7946).
+      required: [type, geometry, properties]
+      properties:
+        type:
+          type: string
+          enum: [Feature]
+        id:
+          type: [string, "null"]
+          description: Code du territoire.
+        geometry:
+          $ref: '#/components/schemas/GeoJsonGeometry'
+        properties:
+          type: object
+          additionalProperties: true
+    GeoJsonFeatureCollection:
+      type: object
+      description: Collection d'entités GeoJSON (RFC 7946).
+      required: [type, features]
+      properties:
+        type:
+          type: string
+          enum: [FeatureCollection]
+        features:
+          type: array
+          items:
+            $ref: '#/components/schemas/GeoJsonFeature'
+    NullableTerritory:
+      description: Territoire éventuellement absent d'un niveau de la hiérarchie.
+      oneOf:
+        - $ref: '#/components/schemas/Territory'
+        - type: 'null'
+    ReverseGeocodeHierarchy:
+      type: object
+      description: Hiérarchie territoriale résolue pour un point WGS84.
+      properties:
+        country:
+          $ref: '#/components/schemas/NullableTerritory'
+        region:
+          $ref: '#/components/schemas/NullableTerritory'
+        department:
+          $ref: '#/components/schemas/NullableTerritory'
+        arrondissement:
+          $ref: '#/components/schemas/NullableTerritory'
+        commune:
+          $ref: '#/components/schemas/NullableTerritory'
+        district_or_village:
+          $ref: '#/components/schemas/NullableTerritory'
+        hamlet:
+          $ref: '#/components/schemas/NullableTerritory'
+    # --- Catalogue de jeux de données --------------------------------------
+    DatasetLatestVersion:
+      type: object
+      description: Version publiée la plus récente du jeu de données.
+      properties:
+        version:
+          type: [string, "null"]
+        feature_count:
+          type: [integer, "null"]
+        checksum_sha256:
+          type: [string, "null"]
+          description: Empreinte SHA-256 du fichier publié.
+        published_at:
+          type: [string, "null"]
+          format: date-time
+    Dataset:
+      type: object
+      description: Jeu de données du catalogue.
+      properties:
+        uuid:
+          type: string
+          format: uuid
+        slug:
+          type: string
+        name:
+          type: string
+        description:
+          type: [string, "null"]
+        source:
+          type: [string, "null"]
+          description: Nom de la source productrice.
+        category:
+          type: [string, "null"]
+        access_level:
+          type: string
+          enum: [PUBLIC, REGISTERED, RESTRICTED, INTERNAL, CONFIDENTIAL]
+        license:
+          type: [string, "null"]
+        tags:
+          type: [array, "null"]
+          items:
+            type: string
+        metadata:
+          type: [object, "null"]
+          additionalProperties: true
+        is_official:
+          type: boolean
+        latest_version:
+          $ref: '#/components/schemas/DatasetLatestVersion'
+
+    # --- Santé -------------------------------------------------------------
+    HealthCheck:
+      type: object
+      description: État de santé de l'application et de la base PostGIS.
+      properties:
+        status:
+          type: string
+          enum: [healthy, degraded]
+        app_name:
+          type: string
+        api_version:
+          type: string
+        srid_default:
+          type: integer
+          example: 4326
+        timestamp:
+          type: string
+          format: date-time
+        services:
+          type: object
+          description: État détaillé de chaque dépendance (base, cache…).
+          additionalProperties: true
+
+    # --- Clés API ----------------------------------------------------------
+    ApiKey:
+      type: object
+      description: Clé API (le secret en clair n'apparaît qu'à la création/régénération).
+      properties:
+        uuid:
+          type: string
+          format: uuid
+        name:
+          type: string
+        tier:
+          type: string
+          enum: [public, developer, admin]
+        permissions:
+          type: array
+          items:
+            type: string
+        description:
+          type: [string, "null"]
+        last_used_at:
+          type: [string, "null"]
+          format: date-time
+        expires_at:
+          type: [string, "null"]
+          format: date-time
+        is_active:
+          type: boolean
+        token:
+          type: string
+          description: Jeton en clair, retourné uniquement à la création/régénération.
+    TerritoryListEnvelope:
+      type: object
+      description: |
+        Enveloppe commune aux listes de territoires (index, regions, departments,
+        communes) avec métadonnées de pagination.
+      required: [success, count, meta, data]
+      properties:
+        success:
+          type: boolean
+          example: true
+        count:
+          type: integer
+          description: Nombre d'éléments de la page courante.
+        meta:
+          $ref: '#/components/schemas/PaginationMeta'
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/Territory'
+paths:
+  /api/docs:
+    get:
+      tags: [Documentation]
+      summary: Page de documentation interactive (Redoc)
+      description: |
+        Sert la page HTML interactive Redoc permettant d'explorer et de tester
+        l'API v1 depuis le navigateur (US-013, CDC §61). Lecture anonyme.
+      operationId: getApiDocsPage
+      security: []
+      responses:
+        '200':
+          description: Page HTML de la documentation interactive.
+          content:
+            text/html:
+              schema:
+                type: string
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+  /api/docs/openapi.yaml:
+    get:
+      tags: [Documentation]
+      summary: Contrat OpenAPI 3.1 brut (YAML)
+      description: |
+        Renvoie le contrat OpenAPI 3.1 de l'API v1 au format YAML. C'est la
+        source de vérité consommée par la page Redoc et validée en CI.
+      operationId: getApiDocsSpec
+      security: []
+      responses:
+        '200':
+          description: Spécification OpenAPI 3.1 au format YAML.
+          content:
+            application/yaml:
+              schema:
+                type: string
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+  /api/v1/health:
+    get:
+      tags: [Santé]
+      summary: Healthcheck applicatif et état de PostGIS
+      description: |
+        Indique si l'application et la base PostgreSQL/PostGIS sont opérationnelles.
+        Route publique, utilisée par les sondes de déploiement (CDC §63).
+      operationId: getHealth
+      security: []
+      responses:
+        '200':
+          description: État de santé (healthy ou degraded).
+          headers:
+            X-RateLimit-Limit:
+              $ref: '#/components/headers/XRateLimitLimit'
+            X-RateLimit-Remaining:
+              $ref: '#/components/headers/XRateLimitRemaining'
+            X-RateLimit-Reset:
+              $ref: '#/components/headers/XRateLimitReset'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HealthCheck'
+              example:
+                status: healthy
+                app_name: Plateforme Nationale de Données Territoriales du Sénégal
+                api_version: v1.0.0
+                srid_default: 4326
+                timestamp: '2026-01-15T10:30:00+00:00'
+                services:
+                  database:
+                    status: up
+                    engine: PostgreSQL + PostGIS
+                    postgis_version: 3.3 USE_GEOS=1
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '503':
+          description: |
+            Service indisponible (ex. PostGIS injoignable). Renvoyé par les sondes
+            de déploiement pour signaler un incident de dépendance (CDC §63).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+              example:
+                error:
+                  code: SERVICE_UNAVAILABLE
+                  message: Une dépendance critique (PostGIS) est indisponible.
+                  request_id: 6f1d4a2e-9a44-4f1f-9f70-2c2b6a1b7f10
+  /api/v1/auth/keys:
+    get:
+      tags: [Authentification]
+      summary: Lister les clés API de l'utilisateur
+      description: Renvoie les clés API appartenant à l'utilisateur authentifié (secret masqué).
+      operationId: listApiKeys
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Liste des clés API.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [success, count, data]
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  count:
+                    type: integer
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/ApiKey'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+    post:
+      tags: [Authentification]
+      summary: Créer une clé API
+      description: |
+        Crée une clé API pour l'utilisateur authentifié. Le jeton en clair n'est
+        renvoyé qu'une seule fois, à la création (CDC §53).
+      operationId: createApiKey
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name, permissions]
+              properties:
+                name:
+                  type: string
+                  maxLength: 255
+                permissions:
+                  type: array
+                  items:
+                    type: string
+                tier:
+                  type: string
+                  enum: [public, developer, admin]
+                  default: public
+                description:
+                  type: string
+                  maxLength: 500
+                expires_at:
+                  type: string
+                  format: date-time
+      responses:
+        '201':
+          description: Clé API créée ; le jeton en clair est renvoyé une seule fois.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [success, data]
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  data:
+                    $ref: '#/components/schemas/ApiKey'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '422':
+          $ref: '#/components/responses/UnprocessableEntity'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+  /api/v1/auth/keys/{uuid}:
+    delete:
+      tags: [Authentification]
+      summary: Révoquer une clé API
+      description: Révoque définitivement la clé API identifiée par son UUID.
+      operationId: revokeApiKey
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/UuidPath'
+      responses:
+        '200':
+          description: Clé API révoquée.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [success, message]
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  message:
+                    type: string
+                    example: Clé API révoquée.
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+  /api/v1/auth/keys/{uuid}/regenerate:
+    post:
+      tags: [Authentification]
+      summary: Régénérer le jeton d'une clé API
+      description: |
+        Régénère le jeton d'une clé API existante. L'ancien jeton est invalidé
+        et le nouveau n'est renvoyé qu'une seule fois.
+      operationId: regenerateApiKey
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/UuidPath'
+      responses:
+        '200':
+          description: Jeton régénéré ; le nouveau jeton en clair est renvoyé une seule fois.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [success, data]
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  data:
+                    $ref: '#/components/schemas/ApiKey'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+  /api/v1/territories:
+    get:
+      tags: [Territoires]
+      summary: Liste paginée et filtrable des territoires
+      description: |
+        Liste paginée des territoires avec filtres (niveau, type, parent, statut,
+        recherche textuelle, BBOX). Par défaut, sans critère, renvoie les régions
+        (niveau 1). Avec `format=geojson`, renvoie une `FeatureCollection`
+        RFC 7946 (US-012).
+      operationId: listTerritories
+      security: []
+      parameters:
+        - $ref: '#/components/parameters/LevelQuery'
+        - $ref: '#/components/parameters/TypeQuery'
+        - $ref: '#/components/parameters/ParentQuery'
+        - $ref: '#/components/parameters/ParentCodeQuery'
+        - $ref: '#/components/parameters/StatusQuery'
+        - $ref: '#/components/parameters/SearchQuery'
+        - $ref: '#/components/parameters/BboxQuery'
+        - $ref: '#/components/parameters/PageQuery'
+        - $ref: '#/components/parameters/PerPageQuery'
+        - $ref: '#/components/parameters/LimitQuery'
+        - $ref: '#/components/parameters/OffsetQuery'
+        - $ref: '#/components/parameters/FormatQuery'
+        - $ref: '#/components/parameters/SimplifiedQuery'
+        - $ref: '#/components/parameters/ToleranceQuery'
+      responses:
+        '200':
+          description: Liste paginée des territoires (JSON) ou FeatureCollection (GeoJSON).
+          headers:
+            X-RateLimit-Limit:
+              $ref: '#/components/headers/XRateLimitLimit'
+            X-RateLimit-Remaining:
+              $ref: '#/components/headers/XRateLimitRemaining'
+            X-RateLimit-Reset:
+              $ref: '#/components/headers/XRateLimitReset'
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [success, count, meta, data]
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  count:
+                    type: integer
+                    description: Nombre d'éléments de la page courante.
+                  meta:
+                    $ref: '#/components/schemas/PaginationMeta'
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Territory'
+            application/geo+json:
+              schema:
+                $ref: '#/components/schemas/GeoJsonFeatureCollection'
+        '422':
+          $ref: '#/components/responses/UnprocessableEntity'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+  /api/v1/territories/regions:
+    get:
+      tags: [Territoires]
+      summary: Liste des régions du Sénégal (niveau 1)
+      description: Raccourci de `/territories?level=1`. Renvoie les 14 régions du Sénégal.
+      operationId: listRegions
+      security: []
+      parameters:
+        - $ref: '#/components/parameters/PageQuery'
+        - $ref: '#/components/parameters/PerPageQuery'
+        - $ref: '#/components/parameters/FormatQuery'
+        - $ref: '#/components/parameters/SimplifiedQuery'
+        - $ref: '#/components/parameters/ToleranceQuery'
+      responses:
+        '200':
+          description: Liste paginée des régions (JSON) ou FeatureCollection (GeoJSON).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TerritoryListEnvelope'
+            application/geo+json:
+              schema:
+                $ref: '#/components/schemas/GeoJsonFeatureCollection'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+  /api/v1/territories/departments:
+    get:
+      tags: [Territoires]
+      summary: Liste des départements du Sénégal (niveau 2)
+      description: Raccourci de `/territories?level=2`.
+      operationId: listDepartments
+      security: []
+      parameters:
+        - $ref: '#/components/parameters/ParentCodeQuery'
+        - $ref: '#/components/parameters/PageQuery'
+        - $ref: '#/components/parameters/PerPageQuery'
+        - $ref: '#/components/parameters/FormatQuery'
+        - $ref: '#/components/parameters/SimplifiedQuery'
+        - $ref: '#/components/parameters/ToleranceQuery'
+      responses:
+        '200':
+          description: Liste paginée des départements (JSON) ou FeatureCollection (GeoJSON).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TerritoryListEnvelope'
+            application/geo+json:
+              schema:
+                $ref: '#/components/schemas/GeoJsonFeatureCollection'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+  /api/v1/territories/communes:
+    get:
+      tags: [Territoires]
+      summary: Liste des communes du Sénégal (niveau 4)
+      description: Raccourci de `/territories?level=4`.
+      operationId: listCommunes
+      security: []
+      parameters:
+        - $ref: '#/components/parameters/ParentCodeQuery'
+        - $ref: '#/components/parameters/PageQuery'
+        - $ref: '#/components/parameters/PerPageQuery'
+        - $ref: '#/components/parameters/FormatQuery'
+        - $ref: '#/components/parameters/SimplifiedQuery'
+        - $ref: '#/components/parameters/ToleranceQuery'
+      responses:
+        '200':
+          description: Liste paginée des communes (JSON) ou FeatureCollection (GeoJSON).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TerritoryListEnvelope'
+            application/geo+json:
+              schema:
+                $ref: '#/components/schemas/GeoJsonFeatureCollection'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+  /api/v1/territories/code/{code}:
+    get:
+      tags: [Territoires]
+      summary: Détail d'un territoire par son code officiel
+      description: |
+        Récupère le détail complet d'un territoire à partir de son code officiel
+        (ex. `SN`, `SN-TH`, `SN-TH-MB`). Route littérale prioritaire sur `/{code}`.
+      operationId: showTerritoryByCode
+      security: []
+      parameters:
+        - $ref: '#/components/parameters/TerritoryCode'
+        - $ref: '#/components/parameters/FormatQuery'
+        - $ref: '#/components/parameters/SimplifiedQuery'
+        - $ref: '#/components/parameters/ToleranceQuery'
+      responses:
+        '200':
+          description: Détail du territoire (JSON) ou Feature GeoJSON.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [success, data]
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  data:
+                    $ref: '#/components/schemas/Territory'
+            application/geo+json:
+              schema:
+                $ref: '#/components/schemas/GeoJsonFeature'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+  /api/v1/territories/{code}:
+    get:
+      tags: [Territoires]
+      summary: Détail d'un territoire (par code)
+      description: |
+        Récupère le détail complet d'un territoire à partir de son code officiel
+        (ex. `SN`, `SN-TH`, `SN-TH-MB`).
+      operationId: showTerritory
+      security: []
+      parameters:
+        - $ref: '#/components/parameters/TerritoryCode'
+        - $ref: '#/components/parameters/FormatQuery'
+        - $ref: '#/components/parameters/SimplifiedQuery'
+        - $ref: '#/components/parameters/ToleranceQuery'
+      responses:
+        '200':
+          description: Détail du territoire (JSON) ou Feature GeoJSON.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [success, data]
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  data:
+                    $ref: '#/components/schemas/Territory'
+            application/geo+json:
+              schema:
+                $ref: '#/components/schemas/GeoJsonFeature'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+  /api/v1/territories/{code}/children:
+    get:
+      tags: [Territoires]
+      summary: Enfants directs d'un territoire
+      description: |
+        Renvoie les enfants administratifs directs (ex. région → départements,
+        département → arrondissements) — CDC §39.
+      operationId: listTerritoryChildren
+      security: []
+      parameters:
+        - $ref: '#/components/parameters/TerritoryCode'
+      responses:
+        '200':
+          description: Enfants directs du territoire.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [success, count, data]
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  count:
+                    type: integer
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Territory'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+  /api/v1/territories/{code}/parents:
+    get:
+      tags: [Territoires]
+      summary: Chaîne des parents d'un territoire
+      description: |
+        Renvoie la chaîne complète des parents, du pays vers le parent direct
+        (Sénégal → Thiès → Mbour → Commune de Mbour). Le territoire lui-même
+        est exclu (CDC §39).
+      operationId: listTerritoryParents
+      security: []
+      parameters:
+        - $ref: '#/components/parameters/TerritoryCode'
+      responses:
+        '200':
+          description: Chaîne des parents, du pays vers le parent direct.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [success, count, data]
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  count:
+                    type: integer
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Territory'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+  /api/v1/territories/{code}/hierarchy:
+    get:
+      tags: [Territoires]
+      summary: Arbre hiérarchique d'un territoire
+      description: Renvoie le territoire, ses ancêtres et ses enfants directs.
+      operationId: getTerritoryHierarchy
+      security: []
+      parameters:
+        - $ref: '#/components/parameters/TerritoryCode'
+      responses:
+        '200':
+          description: Nœud hiérarchique (territoire, ancêtres, enfants).
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [success, data]
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  data:
+                    $ref: '#/components/schemas/HierarchyNode'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+  /api/v1/territories/{code}/geometry:
+    get:
+      tags: [Territoires]
+      summary: Géométrie seule d'un territoire (GeoJSON Feature)
+      description: |
+        Renvoie uniquement la géométrie du territoire sous forme d'entité
+        GeoJSON (RFC 7946), avec simplification optionnelle (US-012).
+      operationId: getTerritoryGeometry
+      security: []
+      parameters:
+        - $ref: '#/components/parameters/TerritoryCode'
+        - $ref: '#/components/parameters/SimplifiedQuery'
+        - $ref: '#/components/parameters/ToleranceQuery'
+      responses:
+        '200':
+          description: Entité GeoJSON (RFC 7946) de la géométrie.
+          content:
+            application/geo+json:
+              schema:
+                $ref: '#/components/schemas/GeoJsonFeature'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+  /api/v1/territories/{code}/map:
+    get:
+      tags: [Territoires]
+      summary: Payload cartographique complet d'un territoire
+      description: |
+        Renvoie geometry, bbox, centroid, properties et enfants directs —
+        payload optimisé pour l'affichage cartographique (CDC §41).
+      operationId: getTerritoryMap
+      security: []
+      parameters:
+        - $ref: '#/components/parameters/TerritoryCode'
+      responses:
+        '200':
+          description: Payload cartographique du territoire.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [success, data]
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  data:
+                    $ref: '#/components/schemas/TerritoryMap'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+  /api/v1/spatial/reverse-geocode:
+    get:
+      tags: [Spatial]
+      summary: Géocodage inverse (coordonnées → hiérarchie territoriale)
+      description: |
+        À partir d'un point WGS84 (EPSG:4326), renvoie la hiérarchie territoriale
+        complète (pays → région → département → arrondissement → commune → …)
+        via `ST_Within`. Un point **hors emprise** (ou dans l'océan) renvoie un
+        `404` explicite — jamais une commune arbitraire. Chaque résultat porte un
+        **indicateur de confiance** (`high`/`medium`/`low`) dérivé de la distance
+        à la frontière du territoire le plus fin : un point proche d'une limite
+        est intrinsèquement ambigu. Coordonnées : `lng` (alias `lon`) et `lat`
+        (CDC §44).
+      operationId: reverseGeocode
+      security: []
+      parameters:
+        - $ref: '#/components/parameters/LongitudeQuery'
+        - $ref: '#/components/parameters/LatitudeQuery'
+        - $ref: '#/components/parameters/LevelQuery'
+      responses:
+        '200':
+          description: Hiérarchie territoriale résolue pour le point donné.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [success, query, confidence, hierarchy]
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  query:
+                    type: object
+                    properties:
+                      longitude:
+                        type: number
+                      latitude:
+                        type: number
+                  confidence:
+                    type: [string, "null"]
+                    enum: [high, medium, low]
+                    description: |
+                      Indicateur de confiance (tolérance de frontière) :
+                      `high` ≥ 1000 m d'une frontière, `medium` 100–1000 m,
+                      `low` < 100 m (point proche d'une limite).
+                  boundary_distance_m:
+                    type: [number, "null"]
+                    description: Distance (mètres) du point à la frontière du territoire le plus fin contenant.
+                    example: 26919
+                  hierarchy:
+                    $ref: '#/components/schemas/ReverseGeocodeHierarchy'
+              example:
+                success: true
+                query:
+                  longitude: -16.25
+                  latitude: 14.75
+                confidence: high
+                boundary_distance_m: 26919
+                hierarchy:
+                  country: { code: SN, name: Sénégal }
+                  region: { code: SN-TH, name: Thiès }
+                  department: { code: SN-TH-MB, name: Mbour }
+                  commune: { code: SN-TH-MB-MBR, name: Mbour }
+        '404':
+          description: |
+            Aucun territoire ne couvre le point (hors emprise ou dans l'océan).
+            Enveloppe d'erreur §50 avec le code `REVERSE_GEOCODE_OUTSIDE_TERRITORY`.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+              example:
+                error:
+                  code: REVERSE_GEOCODE_OUTSIDE_TERRITORY
+                  message: "Aucun territoire ne couvre le point (-25, 10)."
+                  request_id: 6f1d4a2e-9a44-4f1f-9f70-2c2b6a1b7f10
+        '422':
+          $ref: '#/components/responses/UnprocessableEntity'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+  /api/v1/spatial/bbox:
+    get:
+      tags: [Spatial]
+      summary: Recherche spatiale par emprise (BBOX)
+      description: |
+        Renvoie les territoires intersectant l'emprise `bbox` fournie
+        (`min_lon,min_lat,max_lon,max_lat` en WGS84), via `ST_Intersects` en
+        requête préparée. Avec `format=geojson`, renvoie une FeatureCollection
+        RFC 7946 (US-012).
+      operationId: queryBbox
+      security: []
+      parameters:
+        - $ref: '#/components/parameters/BboxRequiredQuery'
+        - $ref: '#/components/parameters/LevelQuery'
+        - $ref: '#/components/parameters/LimitQuery'
+        - $ref: '#/components/parameters/FormatQuery'
+      responses:
+        '200':
+          description: Territoires intersectant l'emprise (JSON) ou FeatureCollection (GeoJSON).
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [success, bbox, count, data]
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  bbox:
+                    type: array
+                    items:
+                      type: number
+                  count:
+                    type: integer
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Territory'
+            application/geo+json:
+              schema:
+                $ref: '#/components/schemas/GeoJsonFeatureCollection'
+        '422':
+          $ref: '#/components/responses/UnprocessableEntity'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+  /api/v1/spatial/intersect:
+    post:
+      tags: [Spatial]
+      summary: Intersection avec une géométrie utilisateur
+      description: |
+        Renvoie les territoires intersectant la géométrie fournie (Polygon,
+        LineString ou Point, en GeoJSON ou WKT), via `ST_Intersects`. Avec
+        `format=geojson`, renvoie une FeatureCollection RFC 7946.
+      operationId: queryIntersect
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [geometry]
+              properties:
+                geometry:
+                  description: Géométrie GeoJSON (objet) ou WKT (chaîne).
+                  oneOf:
+                    - type: object
+                      additionalProperties: true
+                    - type: string
+                      example: POLYGON((-17.6 14.6, -17.0 14.6, -17.0 15.0, -17.6 15.0, -17.6 14.6))
+                level:
+                  $ref: '#/components/schemas/HierarchyLevel'
+                limit:
+                  type: integer
+                  minimum: 1
+                  maximum: 200
+                format:
+                  type: string
+                  enum: [json, geojson]
+      responses:
+        '200':
+          description: Territoires intersectants (JSON) ou FeatureCollection (GeoJSON).
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [success, count, data]
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  count:
+                    type: integer
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Territory'
+            application/geo+json:
+              schema:
+                $ref: '#/components/schemas/GeoJsonFeatureCollection'
+        '422':
+          $ref: '#/components/responses/UnprocessableEntity'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+  /api/v1/search:
+    get:
+      tags: [Recherche]
+      summary: Recherche plein texte de territoires
+      description: |
+        Recherche de territoires par nom, code ou ville (plein texte + trigrammes,
+        insensible à la casse et aux accents). Renvoie une liste plate classée par
+        pertinence, avec filtres optionnels sur le niveau et le parent (US-012).
+      operationId: searchTerritories
+      security: []
+      parameters:
+        - $ref: '#/components/parameters/SearchTermQuery'
+        - $ref: '#/components/parameters/LevelQuery'
+        - $ref: '#/components/parameters/ParentCodeQuery'
+        - $ref: '#/components/parameters/LimitQuery'
+      responses:
+        '200':
+          description: Résultats de recherche classés par pertinence.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [success, query, count, data]
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  query:
+                    type: string
+                    example: Mbour
+                  count:
+                    type: integer
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Territory'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '422':
+          $ref: '#/components/responses/UnprocessableEntity'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+  /api/v1/datasets:
+    get:
+      tags: [Catalogue]
+      summary: Catalogue des jeux de données
+      description: |
+        Liste paginée des jeux de données du catalogue, chacun accompagné de sa
+        version publiée la plus récente. Filtres optionnels par catégorie et
+        niveau d'accès, recherche plein-texte et tri.
+      operationId: listDatasets
+      security: []
+      parameters:
+        - $ref: '#/components/parameters/CategoryQuery'
+        - $ref: '#/components/parameters/AccessLevelQuery'
+        - $ref: '#/components/parameters/DatasetSearchQuery'
+        - $ref: '#/components/parameters/DatasetSearchAliasQuery'
+        - $ref: '#/components/parameters/DatasetOrderQuery'
+        - $ref: '#/components/parameters/DatasetDirectionQuery'
+        - $ref: '#/components/parameters/PageQuery'
+        - $ref: '#/components/parameters/PerPageQuery'
+        - $ref: '#/components/parameters/LimitQuery'
+        - $ref: '#/components/parameters/OffsetQuery'
+      responses:
+        '200':
+          description: Liste paginée des jeux de données.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [success, count, data]
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  count:
+                    type: integer
+                    description: Nombre d'éléments retournés sur la page courante.
+                  total:
+                    type: integer
+                    description: Nombre total d'éléments correspondant aux filtres.
+                  current_page:
+                    type: integer
+                    description: Numéro de la page courante.
+                  per_page:
+                    type: integer
+                    description: Nombre d'éléments par page.
+                  last_page:
+                    type: integer
+                    description: Dernière page disponible.
+                  from:
+                    type: integer
+                    description: Numéro du premier élément de la page courante.
+                  to:
+                    type: integer
+                    description: Numéro du dernier élément de la page courante.
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Dataset'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+  /api/v1/datasets/{slug}:
+    get:
+      tags: [Catalogue]
+      summary: Détail d'un jeu de données par slug
+      description: Renvoie le détail d'un jeu de données et sa dernière version publiée.
+      operationId: showDataset
+      security: []
+      parameters:
+        - $ref: '#/components/parameters/SlugPath'
+      responses:
+        '200':
+          description: Détail du jeu de données.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [success, data]
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  data:
+                    $ref: '#/components/schemas/Dataset'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+
+
+  /api/v1/admin/audit/summary:
+    get:
+      tags: [Administration]
+      summary: Synthèse d'audit (RBAC §55)
+      description: |
+        Exemple de ressource administrée. Exige une clé API **active** portant la
+        permission `administer`. Une clé publique/développeur reçoit **403**
+        (INSUFFICIENT_PERMISSIONS) ; l'absence de clé reçoit **401**
+        (API_KEY_MISSING) — jamais un accès partiel (CDC §55).
+      operationId: getAdminAuditSummary
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Synthèse d'audit autorisée.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [success, data]
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  data:
+                    type: object
+                    properties:
+                      audit_events_total:
+                        type: integer
+                      granted_by_permission:
+                        type: string
+                        example: administer
+        '403':
+          description: Clé active mais dépourvue de la permission `administer`.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+              example:
+                error:
+                  code: INSUFFICIENT_PERMISSIONS
+                  message: "Permission « administer » manquante pour cette ressource."
+                  request_id: 6f1d4a2e-9a44-4f1f-9f70-2c2b6a1b7f10
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+

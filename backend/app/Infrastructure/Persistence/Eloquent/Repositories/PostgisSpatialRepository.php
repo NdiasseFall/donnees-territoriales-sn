@@ -23,8 +23,12 @@ class PostgisSpatialRepository implements SpatialQueryRepositoryInterface
 
     public function reverseGeocode(Coordinates $coordinates, ?HierarchyLevel $targetLevel = null): array
     {
-        // fn_reverse_geocode renvoie un JSONB scalar {point, hierarchy:{type:{...}}}
+        // fn_reverse_geocode renvoie un JSONB scalar
+        // {point, confidence, boundary_distance_m, hierarchy:{type:{...}}}
         // — appel en scalaire (SELECT fn(...)), pas en table.
+        $confidence = null;
+        $boundaryDistanceM = null;
+
         try {
             $row = DB::selectOne(
                 'SELECT published.fn_reverse_geocode(?, ?) AS result',
@@ -32,7 +36,7 @@ class PostgisSpatialRepository implements SpatialQueryRepositoryInterface
             );
         } catch (\Throwable) {
             // Fonction absente ou erreur spatiale : jamais de 500 — résultat vide.
-            return [];
+            return ['levels' => [], 'confidence' => null, 'boundary_distance_m' => null];
         }
 
         $payload = $row?->result ?? null;
@@ -40,12 +44,17 @@ class PostgisSpatialRepository implements SpatialQueryRepositoryInterface
             $payload = json_decode($payload, true);
         }
         if (! is_array($payload)) {
-            return [];
+            return ['levels' => [], 'confidence' => null, 'boundary_distance_m' => null];
         }
+
+        $confidence = is_string($payload['confidence'] ?? null) ? $payload['confidence'] : null;
+        $boundaryDistanceM = isset($payload['boundary_distance_m']) && is_numeric($payload['boundary_distance_m'])
+            ? (float) $payload['boundary_distance_m']
+            : null;
 
         $hierarchy = $payload['hierarchy'] ?? null;
         if (! is_array($hierarchy)) {
-            return [];
+            return ['levels' => [], 'confidence' => $confidence, 'boundary_distance_m' => $boundaryDistanceM];
         }
 
         $results = [];
@@ -67,7 +76,11 @@ class PostgisSpatialRepository implements SpatialQueryRepositoryInterface
             ];
         }
 
-        return $results;
+        return [
+            'levels' => $results,
+            'confidence' => $confidence,
+            'boundary_distance_m' => $boundaryDistanceM,
+        ];
     }
 
     public function findWithinBoundingBox(BoundingBox $boundingBox, ?HierarchyLevel $level = null, int $limit = 500): array

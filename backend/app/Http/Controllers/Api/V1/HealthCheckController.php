@@ -14,6 +14,7 @@ class HealthCheckController extends Controller
     public function health(): JsonResponse
     {
         $status = 'healthy';
+        $httpStatus = 200;
         $services = [];
 
         // Test de la connexion PostgreSQL / PostGIS
@@ -25,7 +26,11 @@ class HealthCheckController extends Controller
                 'postgis_version' => $postgisVersion->ver ?? 'active',
             ];
         } catch (Throwable $e) {
+            // US-003 / US-022 : une base injoignable est un état critique.
+            // Le healthcheck renvoie 503 (pas 200) pour que les sondes
+            // d'orchestration (Docker, load balancer) détectent la panne.
             $status = 'degraded';
+            $httpStatus = 503;
             $services['database'] = [
                 'status' => 'down',
                 'error' => $e->getMessage(),
@@ -39,6 +44,6 @@ class HealthCheckController extends Controller
             'srid_default' => 4326,
             'timestamp' => now()->toIso8601String(),
             'services' => $services,
-        ]);
+        ], $httpStatus);
     }
 }

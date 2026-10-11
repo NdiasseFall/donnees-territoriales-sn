@@ -18,6 +18,23 @@ final class ReverseGeocodeResultDTO
         public readonly ?TerritoryDTO $arrondissement = null,
         public readonly ?TerritoryDTO $commune = null,
         public readonly ?TerritoryDTO $districtOrVillage = null,
-        public readonly ?TerritoryDTO $hamlet = null
+        public readonly ?TerritoryDTO $hamlet = null,
+        public readonly ?string $confidence = null,
+        public readonly ?float $boundaryDistanceM = null
     ) {}
+
+    /**
+     * Vrai si aucun territoire n'a été résolu (point hors emprise ou en mer).
+     * Déclenche un 404 côté API (US-014, CDC §44) — jamais de commune arbitraire.
+     */
+    public function isEmpty(): bool
+    {
+        return $this->country === null
+            && $this->region === null
+            && $this->department === null
+            && $this->arrondissement === null
+            && $this->commune === null
+            && $this->districtOrVillage === null
+            && $this->hamlet === null;
+    }
 }
