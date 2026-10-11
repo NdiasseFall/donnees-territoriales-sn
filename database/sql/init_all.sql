@@ -26,4 +26,7 @@
 \i 05_create_published_schema.sql
 \i 06_spatial_helper_functions.sql
 
+\echo '--> [7/7] Alignement DDL catalogue datasets (Phase 4 US-015/US-018)...'
+\i 08_align_dataset_catalog_ddl.sql
+
 \echo '--> Initialisation PostGIS terminée avec succès !'

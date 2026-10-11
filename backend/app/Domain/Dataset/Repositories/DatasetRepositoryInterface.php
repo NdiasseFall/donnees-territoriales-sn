@@ -29,6 +29,7 @@ interface DatasetRepositoryInterface
         int $limit = 50,
         int $offset = 0
     ): array;
+
     public function countByCriteria(
         ?string $category = null,
         ?AccessLevel $accessLevel = null,
@@ -36,7 +37,6 @@ interface DatasetRepositoryInterface
     ): int;
 
     public function findLatestPublishedVersion(int $datasetId): ?DatasetVersion;
-
 
     /**
      * Recherche du catalogue (nom, description, catégorie, producteur), insensible

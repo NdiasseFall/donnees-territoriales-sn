@@ -39,6 +39,8 @@ services:
       - ./database/sql/06_spatial_helper_functions.sql:/docker-entrypoint-initdb.d/06_spatial_helper_functions.sql:ro
       # 07 : purge idempotente des codes legacy accentués (stabilisation).
       - ./database/sql/07_purge_legacy_accented_codes.sql:/docker-entrypoint-initdb.d/07_purge_legacy_accented_codes.sql:ro
+      # 08 : alignement DDL catalogue datasets (Phase 4 US-015/US-018).
+      - ./database/sql/08_align_dataset_catalog_ddl.sql:/docker-entrypoint-initdb.d/08_align_dataset_catalog_ddl.sql:ro
     networks:
       - territorial_net
     healthcheck:

@@ -139,16 +139,20 @@ class EloquentDatasetRepository implements DatasetRepositoryInterface
             })
             ->select(['d.*', 's.name as source_name'])
             ->limit($limit)
-            ->orderByRaw("similarity(d.name, ?)", [$normalized])
+            ->orderByRaw('similarity(d.name, ?)', [$normalized])
             ->get()
             ->map(fn ($r) => $this->hydrateDataset($r))
             ->all();
     }
+
     /**
      * Compteur aligné sur findByCriteria (pagination — §60).
      */
-    public function countByCriteria(?string $category = null, ?AccessLevel $accessLevel = null, string $search = ''): int
-    {
+    public function countByCriteria(
+        ?string $category = null,
+        ?AccessLevel $accessLevel = null,
+        string $search = ''
+    ): int {
         $query = DB::table('core.datasets as d')
             ->leftJoin('core.sources as s', 'd.source_id', '=', 's.id');
 
@@ -189,8 +193,6 @@ class EloquentDatasetRepository implements DatasetRepositoryInterface
 
         return $row ? $this->hydrateVersion($row) : null;
     }
-
-
 
     public function findVersions(int $datasetId): array
     {
