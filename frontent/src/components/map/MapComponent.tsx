@@ -16,6 +16,7 @@ import 'maplibre-gl/dist/maplibre-gl.css';
 import { useMapStore } from '@/lib/store';
 import { territoryApi } from '@/lib/api';
 import type { MapLayerId, TerritoryFeature } from '@/types/territoire';
+import { MapTooltip } from './MapTooltip';
 
 const QUERYABLE_LAYERS = [
   'regions-layer',
@@ -81,6 +82,13 @@ const ZOOM_THRESHOLDS: Record<MapLayerId, [number, number]> = {
 export function MapComponent() {
   const mapContainer = useRef<HTMLDivElement>(null);
   const map = useRef<Map | null>(null);
+
+  // US-015 — niveaux de territoires déjà chargés (garde pour l'implémentation
+  // paresseuse et la tolérance réseau).
+  const loadedLevels = useRef<Set<number>>(new Set());
+
+  // US-015 — position de l'infobulle pour le tooltip (coordonnées du canvas).
+  const [tooltipPosition, setTooltipPosition] = useState<{ x: number; y: number } | null>(null);
   const [mapLoaded, setMapLoaded] = useState(false);
 
   const {
@@ -90,6 +98,7 @@ export function MapComponent() {
     setMapViewport,
     setSelectedTerritory,
     setHoveredTerritory,
+    hoveredTerritory,
   } = useMapStore();
 
 
@@ -128,26 +137,6 @@ export function MapComponent() {
     }
   }, []);
 
-  const loadInitialData = useCallback(async () => {
-    if (!map.current) return;
-    setLoading(true);
-
-    try {
-      const [regions, departments] = await Promise.all([
-        territoryApi.list({ level: 1, format: 'geojson', limit: 20 }),
-        territoryApi.list({ level: 2, format: 'geojson', limit: 50 }),
-      ]);
-
-      if (map.current) {
-        updateSourceData('regions-source', regions.data.data);
-        updateSourceData('departments-source', departments.data.data);
-      }
-    } catch (error) {
-      console.error('Failed to load initial data:', error);
-    } finally {
-      setLoading(false);
-    }
-  }, [setLoading, updateSourceData]);
   const handleClick = useCallback((e: MapMouseEvent) => {
     if (!map.current) return;
 
@@ -172,28 +161,103 @@ export function MapComponent() {
     if (features.length > 0) {
       setHoveredTerritory(features[0] as unknown as TerritoryFeature);
       map.current.getCanvas().style.cursor = 'pointer';
+      // US-015 — position de l'infobulle (coordonnées du canvas).
+      const rect = map.current.getCanvas().getBoundingClientRect();
+      const containerRect = mapContainer.current?.getBoundingClientRect();
+      setTooltipPosition({
+        x: e.point.x - (containerRect ? rect.left - containerRect.left : 0),
+        y: e.point.y - (containerRect ? rect.top - containerRect.top : 0),
+      });
     } else {
       setHoveredTerritory(null);
+      setTooltipPosition(null);
       map.current.getCanvas().style.cursor = '';
     }
   }, [setHoveredTerritory]);
 
-  const updateVisibleLayers = useCallback((zoom: number) => {
-    if (!map.current) return;
-
-    Object.entries(ZOOM_THRESHOLDS).forEach(([layerId, [minZoom, maxZoom]]) => {
-      const config = layerConfigs.find((l) => l.id === layerId);
-      const shouldShow = zoom >= minZoom && zoom < maxZoom && config?.visible;
-
-      if (map.current!.getLayer(LAYER_STYLES[layerId as MapLayerId].id)) {
-        map.current!.setLayoutProperty(
-          LAYER_STYLES[layerId as MapLayerId].id,
-          'visibility',
-          shouldShow ? 'visible' : 'none'
+  const loadLevelData = useCallback(
+    async (level: number, sourceId: string) => {
+      if (!map.current || loadedLevels.current.has(level)) return;
+      loadedLevels.current.add(level);
+      try {
+        const bounds = map.current!.getBounds();
+        const response = await territoryApi.bbox(
+          bounds.getWest(),
+          bounds.getSouth(),
+          bounds.getEast(),
+          bounds.getNorth(),
+          { level, format: 'geojson', limit: 500 }
         );
+        const payload = response.data as
+          | { data?: GeoJSON.Feature[] }
+          | GeoJSON.FeatureCollection;
+        const features =
+          Array.isArray((payload as { data?: unknown }).data)
+            ? (payload as { data: GeoJSON.Feature[] }).data
+            : (payload as GeoJSON.FeatureCollection).features ?? [];
+        updateSourceData(sourceId, features);
+      } catch (error) {
+        // Tolérance : on retire la garde pour réessayer au prochain passage.
+        loadedLevels.current.delete(level);
+        console.error(`[US-015] Échec du chargement du niveau ${level} :`, error);
       }
-    });
-  }, [layerConfigs]);
+    },
+    [updateSourceData]
+  );
+
+  const updateVisibleLayers = useCallback(
+    (zoom: number) => {
+      if (!map.current) return;
+
+      Object.entries(ZOOM_THRESHOLDS).forEach(([layerId, [minZoom, maxZoom]]) => {
+        const config = layerConfigs.find((l) => l.id === layerId);
+        const shouldShow = zoom >= minZoom && zoom < maxZoom && config?.visible;
+
+        if (map.current!.getLayer(LAYER_STYLES[layerId as MapLayerId].id)) {
+          map.current!.setLayoutProperty(
+            LAYER_STYLES[layerId as MapLayerId].id,
+            'visibility',
+            shouldShow ? 'visible' : 'none'
+          );
+        }
+      });
+
+      // US-015 — chargement paresseux (§83) : arrondissements (niveau 3) au
+      // zoom ≥ 11, communes (niveau 4) au zoom ≥ 13 (une seule fois chacun).
+      if (zoom >= 11) {
+        void loadLevelData(3, 'arrondissements-source');
+      }
+      if (zoom >= 13) {
+        void loadLevelData(4, 'communes-source');
+      }
+    },
+    [layerConfigs, loadLevelData]
+  );
+
+  const loadInitialData = useCallback(async () => {
+    if (!map.current) return;
+    setLoading(true);
+
+    try {
+      const [regions, departments] = await Promise.all([
+        territoryApi.list({ level: 1, format: 'geojson', limit: 20 }),
+        territoryApi.list({ level: 2, format: 'geojson', limit: 50 }),
+      ]);
+
+      if (map.current) {
+        updateSourceData('regions-source', regions.data.data);
+        updateSourceData('departments-source', departments.data.data);
+        loadedLevels.current.add(1);
+        loadedLevels.current.add(2);
+      }
+    } catch (error) {
+      // US-015 — tolérance coupure réseau : journaliser mais conserver les
+      // couches déjà chargées ; ne jamais casser l'explorateur.
+      console.error('[US-015] Échec du chargement initial des territoires :', error);
+    } finally {
+      setLoading(false);
+    }
+  }, [setLoading, updateSourceData]);
 
   useEffect(() => {
     if (!mapContainer.current || map.current) return;
@@ -236,7 +300,10 @@ export function MapComponent() {
 
     map.current.on('click', handleClick);
     map.current.on('mousemove', handleMouseMove);
-    map.current.on('mouseout', () => setHoveredTerritory(null));
+    map.current.on('mouseout', () => {
+      setHoveredTerritory(null);
+      setTooltipPosition(null);
+    });
 
     return () => {
       map.current?.remove();
@@ -263,5 +330,9 @@ export function MapComponent() {
     );
   }
 
-  return <div ref={mapContainer} className="w-full h-full" />;
+  return (
+    <div ref={mapContainer} className="relative w-full h-full">
+      <MapTooltip feature={hoveredTerritory} position={tooltipPosition} />
+    </div>
+  );
 }
