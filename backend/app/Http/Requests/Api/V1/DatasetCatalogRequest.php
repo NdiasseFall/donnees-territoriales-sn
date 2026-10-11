@@ -14,6 +14,34 @@ class DatasetCatalogRequest extends FormRequest
         return true;
     }
 
+    /**
+     * Normalisation AVANT validation (CDC) : l'enum AccessLevel est en
+     * MAJUSCULES, la direction en minuscules — le filtre reste insensible
+     * à la casse côté client (?access_level=public == PUBLIC).
+     */
+    protected function prepareForValidation(): void
+    {
+        $merge = [];
+
+        if ($this->has('access_level') && is_string($this->input('access_level'))) {
+            $merge['access_level'] = strtoupper(trim((string) $this->input('access_level')));
+        }
+
+        if ($this->has('direction') && is_string($this->input('direction'))) {
+            $merge['direction'] = strtolower(trim((string) $this->input('direction')));
+        }
+
+        foreach (['q', 'search', 'category', 'order'] as $key) {
+            if ($this->has($key) && is_string($this->input($key))) {
+                $merge[$key] = trim((string) $this->input($key));
+            }
+        }
+
+        if ($merge !== []) {
+            $this->merge($merge);
+        }
+    }
+
     public function rules(): array
     {
         return [

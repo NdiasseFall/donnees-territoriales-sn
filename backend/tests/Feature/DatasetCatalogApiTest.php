@@ -95,9 +95,18 @@ class DatasetCatalogApiTest extends TestCase
 
     public function test_show_returns_success_envelope(): void
     {
-        // Le slug doit exister dans le seed : s'il n'existe pas, le test est flou ;
-        // on vérifie surtout la forme de la réponse quand le slug est connu.
-        $response = $this->getJson('/api/v1/datasets/cadastre');
+        // Indépendant du seed : on prend le premier slug du catalogue.
+        // Si le catalogue est vide, le test est ignoré plutôt que fragile.
+        $index = $this->getJson('/api/v1/datasets?per_page=1');
+        $index->assertOk();
+
+        $first = $index->json('data.0.slug');
+
+        if (! is_string($first) || $first === '') {
+            self::markTestSkipped('Catalogue vide : aucun slug à détailler.');
+        }
+
+        $response = $this->getJson('/api/v1/datasets/'.$first);
 
         $response->assertOk();
         $response->assertJsonStructure(['success', 'data']);
