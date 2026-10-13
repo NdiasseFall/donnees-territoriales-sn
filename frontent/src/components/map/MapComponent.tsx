@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import {
+  AttributionControl,
   Map,
   NavigationControl,
   ScaleControl,
@@ -78,6 +79,38 @@ const ZOOM_THRESHOLDS: Record<MapLayerId, [number, number]> = {
   arrondissements: [11, 13],
   communes: [13, 22],
 };
+
+/**
+ * US-015 — fond de carte OpenStreetMap.
+ *
+ * Tuiles raster 256 px servies par le service public d'OSM (z max 19).
+ * La source et sa couche sont déclarées dans le style initial de la carte
+ * (et non via `addSource`) : elles sont donc dans la pile AVANT les couches
+ * territoriales ajoutées ensuite, ce qui garantit que les polygones
+ * territoriaux restent superposés au fond.
+ *
+ * La tile usage policy d'OSM impose l'affichage de l'attribution
+ * (`AttributionControl`) et un usage raisonné — en production, prévoir un
+ * tile server interne ou un fournisseur (MapTiler, NextGIS…).
+ * Cf. https://operations.osmfoundation.org/policies/tiles/
+ */
+const OSM_BASEMAP_ID = 'osm-basemap';
+
+/**
+ * US-015 — extrait les features d'une réponse GeoJSON de l'API.
+ *
+ * Les endpoints territoriaux renvoient un `FeatureCollection` RFC 7946 brut
+ * (`{type, features}`), mais certaines routes enveloppent le résultat dans
+ * `{success, data}`. Ce helper absorbe les deux formes pour qu'une évolution
+ * du contrat d'un côté ne vide pas silencieusement la carte.
+ */
+function extractFeatures(payload: unknown): GeoJSON.Feature[] {
+  if (payload === null || typeof payload !== 'object') return [];
+  const record = payload as { features?: unknown; data?: unknown };
+  if (Array.isArray(record.features)) return record.features as GeoJSON.Feature[];
+  if (Array.isArray(record.data)) return record.data as GeoJSON.Feature[];
+  return [];
+}
 
 export function MapComponent() {
   const mapContainer = useRef<HTMLDivElement>(null);
@@ -188,13 +221,7 @@ export function MapComponent() {
           bounds.getNorth(),
           { level, format: 'geojson', limit: 500 }
         );
-        const payload = response.data as
-          | { data?: GeoJSON.Feature[] }
-          | GeoJSON.FeatureCollection;
-        const features =
-          Array.isArray((payload as { data?: unknown }).data)
-            ? (payload as { data: GeoJSON.Feature[] }).data
-            : (payload as GeoJSON.FeatureCollection).features ?? [];
+        const features = extractFeatures(response.data);
         updateSourceData(sourceId, features);
       } catch (error) {
         // Tolérance : on retire la garde pour réessayer au prochain passage.
@@ -244,9 +271,13 @@ export function MapComponent() {
         territoryApi.list({ level: 2, format: 'geojson', limit: 50 }),
       ]);
 
+      // US-015 — `/territories?format=geojson` renvoie un FeatureCollection RFC
+      // 7946 brut (`{type, features}`), et non une enveloppe `{success, data}`.
+      // Lire `.data.data` ici produisait `undefined`, donc `setData()` recevait
+      // `{features: undefined}` et la carte restait vide — sans aucune erreur.
       if (map.current) {
-        updateSourceData('regions-source', regions.data.data);
-        updateSourceData('departments-source', departments.data.data);
+        updateSourceData('regions-source', extractFeatures(regions.data));
+        updateSourceData('departments-source', extractFeatures(departments.data));
         loadedLevels.current.add(1);
         loadedLevels.current.add(2);
       }
@@ -266,8 +297,23 @@ export function MapComponent() {
       container: mapContainer.current,
       style: {
         version: 8,
-        sources: {},
-        layers: [],
+        sources: {
+          [OSM_BASEMAP_ID]: {
+            type: 'raster',
+            tiles: ['https://tile.openstreetmap.org/{z}/{x}/{y}.png'],
+            tileSize: 256,
+            maxzoom: 19,
+            attribution:
+              '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
+          },
+        },
+        layers: [
+          {
+            id: OSM_BASEMAP_ID,
+            type: 'raster',
+            source: OSM_BASEMAP_ID,
+          },
+        ],
       },
       center: [-17.0, 14.5],
       zoom: 6,
@@ -279,6 +325,9 @@ export function MapComponent() {
 
     map.current.addControl(new NavigationControl({ showCompass: false }), 'top-right');
     map.current.addControl(new ScaleControl({ unit: 'metric' }), 'bottom-left');
+    // Affiche l'attribution collectée automatiquement dans les sources du
+    // style (crédit OSM, obligatoire selon la tile usage policy).
+    map.current.addControl(new AttributionControl(), 'bottom-right');
 
     map.current.on('load', () => {
       setMapLoaded(true);
@@ -322,16 +371,23 @@ export function MapComponent() {
     });
   }, [activeLayers, layerConfigs]);
 
-  if (!mapLoaded) {
-    return (
-      <div className="w-full h-full bg-gray-100 flex items-center justify-center">
-        <div className="animate-spin rounded-full h-12 w-12 border-4 border-green-600 border-t-transparent" />
-      </div>
-    );
-  }
-
+  // US-015 — le conteneur de la carte doit rester monté en permanence : le
+  // `useEffect` d'initialisation s'y attache via `mapContainer.current`. Le
+  // spinner de chargement est une surcouche, ce qui évite un blocage circulaire
+  // (pas de conteneur => pas de carte => jamais d'événement `load`).
   return (
-    <div ref={mapContainer} className="relative w-full h-full">
+    <div className="relative w-full h-full">
+      <div ref={mapContainer} className="absolute inset-0 h-full w-full" />
+
+      {!mapLoaded && (
+        <div
+          data-testid="loading-spinner"
+          className="absolute inset-0 z-10 flex h-full w-full items-center justify-center bg-gray-100"
+        >
+          <div className="h-12 w-12 animate-spin rounded-full border-4 border-green-600 border-t-transparent" />
+        </div>
+      )}
+
       <MapTooltip feature={hoveredTerritory} position={tooltipPosition} />
     </div>
   );
